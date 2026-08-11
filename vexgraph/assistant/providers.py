@@ -5,9 +5,11 @@ keeps everything on the machine; Claude is markedly better at reading a vague
 request and picking the right nodes, which is the part that matters most for
 someone who cannot check the result by reading the VEX.
 
-Credentials are read from the environment and never written anywhere. If
-`ANTHROPIC_API_KEY` is not set, this says so and stops — it does not prompt for
-a key, store one, or put one in a config file.
+Credentials are read from the environment. The panel can ask for a key and put
+it in this process's environment for the session, and will save it to your
+Windows user environment only if you tick the box that says so. It is never
+written into this project, and never logged - the repository is public, and a
+key in a file there is a key on the internet.
 """
 
 from __future__ import annotations
@@ -26,6 +28,26 @@ DEFAULT_LOCAL_MODEL = "qwen3:32b"
 # Opus 5 is the right tier for this: choosing correctly from a 1300-entry
 # catalogue on a vague request is exactly where the difference shows.
 DEFAULT_CLAUDE_MODEL = "claude-opus-5"
+
+# Offered in the model menu, best first. Labels say what the trade actually is,
+# because "which model" is otherwise a guess for anyone who does not follow
+# model releases.
+CLAUDE_MODELS = (
+    ("claude-opus-5", "Opus 5 — best at picking the right nodes"),
+    ("claude-sonnet-5", "Sonnet 5 — faster and cheaper, usually as good"),
+    ("claude-haiku-4-5-20251001", "Haiku 4.5 — quickest, simple requests only"),
+)
+
+
+def installed_local_models(url: str = OLLAMA_URL,
+                           timeout: int = 3) -> list[str]:
+    """Model names Ollama already has, so the menu offers only real choices."""
+    try:
+        with urllib.request.urlopen(f"{url}/api/tags", timeout=timeout) as response:
+            tags = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError, TimeoutError):
+        return []
+    return sorted(m.get("name", "") for m in tags.get("models", ()) if m.get("name"))
 
 
 class ProviderError(RuntimeError):
@@ -178,12 +200,22 @@ class OllamaProvider:
 
 # ------------------------------------------------------------------ registry
 
-def providers() -> dict[str, Provider]:
+def all_providers() -> dict[str, Provider]:
+    """Every provider by name.
+
+    Not called `providers`: that shadowed this module wherever the package was
+    imported as `from ..assistant import providers`, so callers silently got
+    the function instead of the module and only found out at the first
+    attribute access.
+    """
     return {"Claude": ClaudeProvider(), "Local": OllamaProvider()}
 
 
-def get(name: str) -> Provider:
+def get(name: str, model: str = "") -> Provider:
     try:
-        return providers()[name]
+        provider = all_providers()[name]
     except KeyError:
         raise ProviderError(f"There is no provider called {name!r}") from None
+    if model:
+        provider.model = model
+    return provider

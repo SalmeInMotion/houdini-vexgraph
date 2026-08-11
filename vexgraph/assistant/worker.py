@@ -25,7 +25,7 @@ from vexgraph.nodedefs import default_registry  # noqa: E402
 
 def run(request: dict) -> dict:
     registry = default_registry()
-    provider = get(request.get("provider", "Claude"))
+    provider = get(request.get("provider", "Claude"), request.get("model", ""))
 
     ready, why = provider.available()
     if not ready:

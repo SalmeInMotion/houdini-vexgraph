@@ -20,13 +20,17 @@ from pathlib import Path
 from PySide6 import QtCore, QtWidgets
 
 from ..assistant import vram
+# By name, not the module: the assistant package also exports a
+# function called `providers`, which shadows it on import.
+from ..assistant.providers import CLAUDE_MODELS, installed_local_models
 from ..graph import Graph
 from ..nodedefs import Registry
 from . import theme
 
-PLACEHOLDER = ('Describe what you want the graph to do.\n\n'
-               'e.g. "stick every point to the closest spot on the second input"\n'
-               '     "delete points further than 2 from the surface"')
+# Short enough to fit the box at every text size. The longer version was clipped
+# mid-sentence, which reads as a bug rather than a hint.
+PLACEHOLDER = ('Describe what you want the graph to do — e.g. "stick every '
+               'point to the closest spot on the second input"')
 
 
 def _clean_python_env() -> dict:
@@ -122,6 +126,60 @@ class AssistantWorker(QtCore.QThread):
         return None
 
 
+def ask_for_api_key(parent) -> bool:
+    """Ask for an Anthropic key and put it in this process's environment.
+
+    Refusing to prompt was a defensible rule that turned out to be a dead end:
+    the panel said what was missing and then offered no way to supply it. What
+    the rule was really protecting against is a key written into the project -
+    which now matters more, not less, since the repository is public. So the key
+    goes into this process only, unless the box is ticked, and even then it goes
+    to the Windows user environment (`setx`) rather than any file here.
+    """
+    dialog = QtWidgets.QDialog(parent)
+    dialog.setWindowTitle("Anthropic API key")
+    dialog.setMinimumWidth(460)
+
+    field = QtWidgets.QLineEdit()
+    field.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+    field.setPlaceholderText("sk-ant-...")
+    remember = QtWidgets.QCheckBox(
+        "Remember on this machine (saves it to your Windows user environment)")
+
+    buttons = QtWidgets.QDialogButtonBox(
+        QtWidgets.QDialogButtonBox.StandardButton.Ok
+        | QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+
+    layout = QtWidgets.QVBoxLayout(dialog)
+    layout.addWidget(QtWidgets.QLabel(
+        "Paste your key from console.anthropic.com.\n"
+        "It is used by this Houdini session only unless you tick the box.\n"
+        "VEXgraph never writes it into the project."))
+    layout.addWidget(field)
+    layout.addWidget(remember)
+    layout.addWidget(buttons)
+
+    if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+        return False
+    key = field.text().strip()
+    if not key:
+        return False
+
+    os.environ["ANTHROPIC_API_KEY"] = key
+    if remember.isChecked():
+        try:
+            # setx writes the user's environment. Same thing you would do by
+            # hand; nothing about it is specific to this project.
+            subprocess.run(["setx", "ANTHROPIC_API_KEY", key], check=True,
+                           capture_output=True,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.SubprocessError):
+            pass          # the session still has it; saving is a convenience
+    return True
+
+
 class VramProbe(QtCore.QThread):
     """Reads GPU and Ollama state off the UI thread.
 
@@ -158,12 +216,19 @@ class AssistantPanel(QtWidgets.QWidget):
         self.worker: AssistantWorker | None = None
         self._current_graph: Graph | None = None
 
+        self._last_request = ""
+
         self.provider = QtWidgets.QComboBox()
         self.provider.addItems(["Claude", "Local"])
         self.provider.setToolTip(
             "Claude is markedly better at picking the right nodes.\n"
             "Local runs on this machine and costs nothing, but is slower\n"
             "and more likely to wire something plausible but wrong.")
+        self.provider.currentTextChanged.connect(self._fill_models)
+
+        self.model = QtWidgets.QComboBox()
+        self.model.setToolTip("Which model answers.")
+        self._fill_models(self.provider.currentText())
 
         self.mode = QtWidgets.QComboBox()
         self.mode.addItems(["Build a graph", "Just answer"])
@@ -189,7 +254,8 @@ class AssistantPanel(QtWidgets.QWidget):
         top = QtWidgets.QHBoxLayout()
         top.setContentsMargins(8, 6, 8, 0)
         top.addWidget(self.provider)
-        top.addWidget(self.mode, 1)
+        top.addWidget(self.model, 1)
+        top.addWidget(self.mode)
 
         # A local model sits in VRAM after answering, which matters on a machine
         # that is also rendering. The reading is of the whole card, not just
@@ -276,6 +342,26 @@ class AssistantPanel(QtWidgets.QWidget):
         """The editor tells us what is on the canvas, so requests can modify it."""
         self._current_graph = graph
 
+    def _fill_models(self, provider: str) -> None:
+        """The model menu follows the provider, and offers only real choices.
+
+        The local list is whatever Ollama has actually pulled: offering a model
+        that is not installed only produces a failure several seconds later.
+        """
+        self.model.clear()
+        if provider == "Claude":
+            for name, label in CLAUDE_MODELS:
+                self.model.addItem(label, name)
+            return
+        installed = installed_local_models()
+        for name in installed:
+            self.model.addItem(name, name)
+        if not installed:
+            self.model.addItem("No local models found", "")
+            self.model.setToolTip(
+                "Ollama is not running, or has no models pulled.\n"
+                "Install one with:  ollama pull qwen3:32b")
+
     def refresh_fonts(self) -> None:
         self.input.setFont(theme.ui_font(9))
         self.log.setFont(theme.ui_font(8))
@@ -291,8 +377,12 @@ class AssistantPanel(QtWidgets.QWidget):
 
         has_graph = (self._current_graph is not None
                      and len(self._current_graph.nodes) > 1)
+        # Kept so a request can be sent again after supplying a key, without
+        # making the user type it a second time.
+        self._last_request = text
         self.worker = AssistantWorker({
             "provider": self.provider.currentText(),
+            "model": self.model.currentData(),
             "mode": "explain" if explaining else "build",
             "text": text,
             "graph": self._current_graph.to_dict() if has_graph else None,
@@ -341,6 +431,16 @@ class AssistantPanel(QtWidgets.QWidget):
                            result.get("notes", ""))
 
     def _failed(self, problems: list[str]) -> None:
+        # A missing key is not a failure to report, it is a question to ask.
+        # Saying "set it and restart Houdini" while offering no way to set it
+        # left the only path to Claude closed from inside the tool.
+        if any("ANTHROPIC_API_KEY" in p for p in problems):
+            if ask_for_api_key(self) and self._last_request:
+                self._say("<i>Key set for this session. Asking again…</i>",
+                          "#7a9a7a")
+                self.input.setPlainText(self._last_request)
+                self.ask()
+                return
         self._say("<b>That did not work</b><br>"
                   + "<br>".join(html.escape(p) for p in problems[:6]), "#e05a5a")
 

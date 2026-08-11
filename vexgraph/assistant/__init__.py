@@ -7,7 +7,8 @@ uses, and put past `vcc` before it is offered.
 """
 
 from .agent import Assistant, GraphBuilder, Result
-from .providers import ClaudeProvider, OllamaProvider, ProviderError, get, providers
+from .providers import (ClaudeProvider, OllamaProvider, ProviderError,
+                        all_providers, get)
 
 __all__ = ["Assistant", "ClaudeProvider", "GraphBuilder", "OllamaProvider",
-           "ProviderError", "Result", "get", "providers"]
+           "ProviderError", "Result", "get", "all_providers"]

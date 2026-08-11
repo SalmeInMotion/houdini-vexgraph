@@ -242,3 +242,103 @@ def test_claude_provider_never_asks_for_or_stores_a_key(monkeypatch):
     ready, why = ClaudeProvider().available()
     assert not ready
     assert "ANTHROPIC_API_KEY" in why and "never stores" in why
+
+
+def test_the_model_menu_offers_only_models_that_exist(monkeypatch):
+    """Offering an uninstalled local model only fails seconds later."""
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6 import QtWidgets
+
+    from vexgraph.assistant import providers as provider_module  # the module
+    from vexgraph.nodedefs import default_registry
+    from vexgraph.ui import assistant_panel
+
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    monkeypatch.setattr(assistant_panel, "installed_local_models",
+                        lambda: ["qwen3:32b", "gemma4:12b"])
+    panel = assistant_panel.AssistantPanel(default_registry())
+
+    panel.provider.setCurrentText("Claude")
+    claude = [panel.model.itemData(i) for i in range(panel.model.count())]
+    assert claude == [name for name, _ in provider_module.CLAUDE_MODELS]
+
+    panel.provider.setCurrentText("Local")
+    local = [panel.model.itemData(i) for i in range(panel.model.count())]
+    assert local == ["qwen3:32b", "gemma4:12b"]
+
+
+def test_no_local_model_installed_says_so_rather_than_offering_one(monkeypatch):
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6 import QtWidgets
+
+    from vexgraph.nodedefs import default_registry
+    from vexgraph.ui import assistant_panel
+
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    monkeypatch.setattr(assistant_panel, "installed_local_models", lambda: [])
+    panel = assistant_panel.AssistantPanel(default_registry())
+    panel.provider.setCurrentText("Local")
+    assert panel.model.itemData(0) == "", "an empty choice must not look valid"
+
+
+def test_the_chosen_model_reaches_the_provider():
+    from vexgraph.assistant.providers import get
+
+    assert get("Claude", "claude-sonnet-5").model == "claude-sonnet-5"
+    assert get("Local", "gemma4:12b").model == "gemma4:12b"
+    # No model named means the provider keeps its own default.
+    assert get("Claude").model
+
+
+def test_a_key_is_never_written_into_the_project(tmp_path, monkeypatch):
+    """The repository is public; a key in a file there is a key on the internet.
+
+    The prompt puts it in this process's environment, and saves it only via the
+    Windows user environment when explicitly asked - never into these files.
+    """
+    import os
+    import subprocess as sp
+    from pathlib import Path
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6 import QtCore, QtWidgets
+
+    from vexgraph.ui import assistant_panel
+
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    root = Path(assistant_panel.__file__).resolve().parents[2]
+    def project_files():
+        # Source only. __pycache__ holds a compiled copy of this very test, so
+        # scanning it finds the stand-in key and reports itself.
+        skip = {".venv", ".git", "__pycache__", ".pytest_cache"}
+        return {f: f.read_bytes() for f in root.rglob("*")
+                if f.is_file() and not skip & set(f.parts)}
+
+    before = project_files()
+
+    # Built at runtime so the literal is in no file on disk - otherwise
+    # this test finds itself and fails.
+    secret = "sk-" + "ant-" + "0" * 12 + "notreal"
+    ran = []
+    monkeypatch.setattr(sp, "run", lambda *a, **k: ran.append(a) or None)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    def fake_exec(self):
+        # Stand in for the user: type the key, do not tick "remember".
+        for child in self.findChildren(QtWidgets.QLineEdit):
+            child.setText(secret)
+        return QtWidgets.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(QtWidgets.QDialog, "exec", fake_exec)
+    assert assistant_panel.ask_for_api_key(None) is True
+
+    assert os.environ["ANTHROPIC_API_KEY"] == secret, "the session should have it"
+    assert not ran, "nothing should be persisted unless asked"
+    after = project_files()
+    assert before == after, "a project file changed while setting the key"
+    for path, data in after.items():
+        assert secret.encode() not in data, f"the key was written into {path}"

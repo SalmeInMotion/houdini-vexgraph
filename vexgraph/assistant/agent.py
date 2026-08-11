@@ -257,13 +257,24 @@ class GraphBuilder:
             return []
 
         if is_exec:
+            # These messages go back to the model to correct itself, so each one
+            # says what to do instead rather than only what was wrong.
             return [f"The link {source}.{out_name} -> {target}.{in_name} is "
-                    f"marked exec but does not use exec pins."]
+                    f"marked exec, but exec links must join a pin literally "
+                    f"named 'exec' (or a loop body pin) on both ends. "
+                    f"{target_def.type} is a value node and never runs in "
+                    f"sequence: wire it into an input instead, with "
+                    f"is_exec false."]
 
         if source_def.output(out_name) is None:
             names = [s.name for s in source_def.outputs]
+            if not names:
+                return [f"{source_def.type} produces no value, so nothing can "
+                        f"be read from it. If you meant to use a variable you "
+                        f"made with var_make, read it back with a var_get node "
+                        f"whose 'name' param matches."]
             return [f"{source_def.type} has no output {out_name!r}. "
-                    f"It has: {', '.join(names) or 'none'}."]
+                    f"Its outputs are: {', '.join(names)}."]
         if target_def.input(in_name) is None:
             names = [s.name for s in target_def.inputs]
             return [f"{target_def.type} has no input {in_name!r}. "

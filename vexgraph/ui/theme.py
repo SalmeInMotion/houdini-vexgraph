@@ -77,10 +77,11 @@ _METRICS = {
     "GRID_SPACING": 26,
 }
 
-# A little bigger than 100% by default - "everything looks small" was the
-# starting complaint, so the out-of-the-box size should already answer it,
-# with the toolbar control there for going further either way.
-UI_SCALE = 1.15
+# 100%. Scaling up by default was an answer to "everything looks small", but it
+# made every fixed-height row too short for its own text, so labels came out
+# clipped - a worse problem than small text, and one the user cannot fix by
+# reaching for the control. The control is still there for going either way.
+UI_SCALE = 1.0
 _SCALE_BOUNDS = (0.75, 1.75)
 
 
