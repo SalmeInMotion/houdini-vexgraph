@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "run_over": "points",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "closest",
+      "type": "closest_surface_point",
+      "params": {
+        "input": "1"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "on_surface",
+      "type": "position_on_primitive",
+      "params": {
+        "input": "1",
+        "attrib": "P",
+        "type": "vector"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "write",
+      "type": "attrib_set",
+      "params": {
+        "attrib": "P",
+        "type": "vector"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "links": [
+    {
+      "from": "start",
+      "out": "exec",
+      "to": "write",
+      "in": "exec",
+      "exec": true
+    },
+    {
+      "from": "closest",
+      "out": "primitive",
+      "to": "on_surface",
+      "in": "primitive"
+    },
+    {
+      "from": "closest",
+      "out": "uv",
+      "to": "on_surface",
+      "in": "uv"
+    },
+    {
+      "from": "on_surface",
+      "out": "value",
+      "to": "write",
+      "in": "value"
+    }
+  ]
+}

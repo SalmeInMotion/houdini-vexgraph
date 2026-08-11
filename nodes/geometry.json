@@ -1,0 +1,230 @@
+{
+  "category": "Geometry",
+  "nodes": [
+    {
+      "type": "point_count",
+      "label": "Point Count",
+      "repeatable": true,
+      "summary": "How many points an input has.",
+      "params": [{"name": "input", "label": "Input", "kind": "int", "default": "0"}],
+      "outputs": [{"name": "count", "type": "int", "label": "Count"}],
+      "expr": "npoints({input})",
+      "tags": ["npoints", "total", "how many", "count"]
+    },
+    {
+      "type": "primitive_count",
+      "label": "Primitive Count",
+      "repeatable": true,
+      "summary": "How many primitives an input has.",
+      "params": [{"name": "input", "label": "Input", "kind": "int", "default": "0"}],
+      "outputs": [{"name": "count", "type": "int", "label": "Count"}],
+      "expr": "nprimitives({input})",
+      "tags": ["nprimitives", "faces", "polygons", "count"]
+    },
+    {
+      "type": "nearest_point",
+      "label": "Nearest Point",
+      "summary": "Finds the point of an input closest to a position.",
+      "help": "Input 0 is the geometry flowing through this wrangle. Wire a second input into the SOP to search a different piece of geometry.",
+      "params": [{"name": "input", "label": "Input", "kind": "int", "default": "1"}],
+      "inputs": [
+        {"name": "position", "type": "vector", "label": "Position", "default": "@P"}
+      ],
+      "outputs": [{"name": "point_number", "type": "int", "label": "Point Number"}],
+      "code": "int {point_number} = nearpoint({input}, {position});",
+      "tags": ["nearpoint", "closest", "near", "find", "snap"]
+    },
+    {
+      "type": "nearest_points",
+      "label": "Nearest Points",
+      "summary": "Finds every point of an input within a radius, closest first.",
+      "params": [{"name": "input", "label": "Input", "kind": "int", "default": "1"}],
+      "inputs": [
+        {"name": "position", "type": "vector", "label": "Position", "default": "@P"},
+        {"name": "radius", "type": "float", "label": "Radius", "default": "1"},
+        {"name": "maximum", "type": "int", "label": "Most To Find", "default": "10"}
+      ],
+      "outputs": [{"name": "point_numbers", "type": "int[]", "label": "Point Numbers"}],
+      "code": "int {point_numbers}[] = nearpoints({input}, {position}, {radius}, {maximum});",
+      "tags": ["nearpoints", "closest", "neighbours", "neighbors", "radius", "search"]
+    },
+    {
+      "type": "read_point_attribute",
+      "label": "Read Point Attribute",
+      "summary": "Reads an attribute from any point, not just the one being worked on.",
+      "params": [
+        {"name": "input", "label": "Input", "kind": "int", "default": "0"},
+        {"name": "attrib", "label": "Attribute", "kind": "attrib", "default": "P"},
+        {"name": "type", "label": "Type", "kind": "menu", "default": "vector",
+         "menu": ["float", "int", "vector", "vector2", "vector4", "string", "matrix"],
+         "retypes": ["value"]}
+      ],
+      "inputs": [
+        {"name": "point_number", "type": "int", "label": "Point Number", "default": "0"}
+      ],
+      "outputs": [{"name": "value", "type": "any", "label": "Value"}],
+      "code": "{type} {value} = point({input}, \"{attrib}\", {point_number});",
+      "tags": ["point", "attribute", "read", "other", "lookup"]
+    },
+    {
+      "type": "read_prim_attribute",
+      "label": "Read Primitive Attribute",
+      "summary": "Reads an attribute from any primitive.",
+      "params": [
+        {"name": "input", "label": "Input", "kind": "int", "default": "0"},
+        {"name": "attrib", "label": "Attribute", "kind": "attrib", "default": "Cd"},
+        {"name": "type", "label": "Type", "kind": "menu", "default": "vector",
+         "menu": ["float", "int", "vector", "vector2", "vector4", "string", "matrix"],
+         "retypes": ["value"]}
+      ],
+      "inputs": [
+        {"name": "primitive_number", "type": "int", "label": "Primitive Number", "default": "0"}
+      ],
+      "outputs": [{"name": "value", "type": "any", "label": "Value"}],
+      "code": "{type} {value} = prim({input}, \"{attrib}\", {primitive_number});",
+      "tags": ["prim", "attribute", "read", "primitive", "lookup"]
+    },
+    {
+      "type": "closest_surface_point",
+      "label": "Closest Point On Surface",
+      "summary": "Finds the nearest spot anywhere on a surface, not just at its points.",
+      "help": "Gives you the distance, which primitive it landed on, and where on that primitive. Feed the last two into Position On Primitive to get the actual point in space.",
+      "params": [{"name": "input", "label": "Input", "kind": "int", "default": "1"}],
+      "inputs": [
+        {"name": "position", "type": "vector", "label": "Position", "default": "@P"}
+      ],
+      "outputs": [
+        {"name": "distance", "type": "float", "label": "Distance"},
+        {"name": "primitive", "type": "int", "label": "Primitive"},
+        {"name": "uv", "type": "vector", "label": "Spot On Primitive"}
+      ],
+      "code": "int {primitive} = -1;\nvector {uv} = {0, 0, 0};\nfloat {distance} = xyzdist({input}, {position}, {primitive}, {uv});",
+      "tags": ["xyzdist", "closest", "surface", "distance", "project", "stick"]
+    },
+    {
+      "type": "position_on_primitive",
+      "label": "Position On Primitive",
+      "summary": "Turns a primitive and a spot on it into a position in space.",
+      "params": [
+        {"name": "input", "label": "Input", "kind": "int", "default": "1"},
+        {"name": "attrib", "label": "Attribute", "kind": "attrib", "default": "P"},
+        {"name": "type", "label": "Type", "kind": "menu", "default": "vector",
+         "menu": ["float", "vector", "vector2", "vector4"],
+         "retypes": ["value"]}
+      ],
+      "inputs": [
+        {"name": "primitive", "type": "int", "label": "Primitive", "default": "0"},
+        {"name": "uv", "type": "vector", "label": "Spot On Primitive", "default": "{0, 0, 0}"}
+      ],
+      "outputs": [{"name": "value", "type": "any", "label": "Value"}],
+      "code": "{type} {value} = primuv({input}, \"{attrib}\", {primitive}, {uv});",
+      "tags": ["primuv", "interpolate", "surface", "sample", "uv"]
+    },
+    {
+      "type": "add_point",
+      "label": "Add Point",
+      "kind": "statement",
+      "summary": "Creates a new point at a position.",
+      "inputs": [
+        {"name": "position", "type": "vector", "label": "Position", "default": "{0, 0, 0}"}
+      ],
+      "outputs": [{"name": "point_number", "type": "int", "label": "New Point"}],
+      "code": "int {point_number} = addpoint(0, {position});",
+      "tags": ["addpoint", "create", "new", "spawn", "scatter"]
+    },
+    {
+      "type": "remove_point",
+      "label": "Remove Point",
+      "kind": "statement",
+      "summary": "Deletes a point.",
+      "help": "Deleting the point being worked on is the usual case, and the default does that.",
+      "inputs": [
+        {"name": "point_number", "type": "int", "label": "Point Number", "default": "@elemnum"}
+      ],
+      "code": "removepoint(0, {point_number});",
+      "tags": ["removepoint", "delete", "kill", "cull", "destroy"]
+    },
+    {
+      "type": "write_point_attribute",
+      "label": "Write Point Attribute",
+      "kind": "statement",
+      "summary": "Writes an attribute onto any point, not just the one being worked on.",
+      "params": [
+        {"name": "attrib", "label": "Attribute", "kind": "attrib", "default": "Cd"},
+        {"name": "type", "label": "Type", "kind": "menu", "default": "vector",
+         "menu": ["float", "int", "vector", "vector2", "vector4", "string", "matrix"],
+         "retypes": ["value"]}
+      ],
+      "inputs": [
+        {"name": "point_number", "type": "int", "label": "Point Number", "default": "0"},
+        {"name": "value", "type": "any", "label": "Value"}
+      ],
+      "code": "setpointattrib(0, \"{attrib}\", {point_number}, {value}, \"set\");",
+      "tags": ["setpointattrib", "write", "other", "attribute"]
+    },
+    {
+      "type": "in_group",
+      "label": "Is In Group",
+      "summary": "True when the point being worked on belongs to a group.",
+      "params": [
+        {"name": "input", "label": "Input", "kind": "int", "default": "0"},
+        {"name": "group", "label": "Group", "kind": "string", "default": "mygroup"}
+      ],
+      "inputs": [
+        {"name": "point_number", "type": "int", "label": "Point Number", "default": "@elemnum"}
+      ],
+      "outputs": [{"name": "result", "type": "int", "label": "True/False"}],
+      "code": "int {result} = inpointgroup({input}, \"{group}\", {point_number});",
+      "tags": ["group", "member", "selection", "belongs"]
+    },
+    {
+      "type": "list_length",
+      "category": "Lists",
+      "label": "List Length",
+      "summary": "How many items a list holds.",
+      "params": [
+        {"name": "type", "label": "Item Type", "kind": "menu", "default": "int",
+         "menu": ["float", "int", "vector", "vector2", "vector4", "string", "matrix"],
+         "retypes": ["items"]}
+      ],
+      "inputs": [{"name": "items", "type": "any[]", "label": "List"}],
+      "outputs": [{"name": "count", "type": "int", "label": "Count"}],
+      "expr": "len({items})",
+      "tags": ["len", "size", "count", "array", "length"]
+    },
+    {
+      "type": "list_item",
+      "category": "Lists",
+      "label": "List Item",
+      "summary": "Takes one item out of a list by position, counting from 0.",
+      "params": [
+        {"name": "type", "label": "Item Type", "kind": "menu", "default": "int",
+         "menu": ["float", "int", "vector", "vector2", "vector4", "string", "matrix"],
+         "retypes": ["items", "item"]}
+      ],
+      "inputs": [
+        {"name": "items", "type": "any[]", "label": "List"},
+        {"name": "position", "type": "int", "label": "Position", "default": "0"}
+      ],
+      "outputs": [{"name": "item", "type": "any", "label": "Item"}],
+      "expr": "{items}[{position}]",
+      "tags": ["index", "element", "get", "array", "pick"]
+    },
+    {
+      "type": "list_append",
+      "category": "Lists",
+      "label": "Add To List",
+      "kind": "statement",
+      "builtin": "list_append",
+      "summary": "Puts an item on the end of a list variable.",
+      "params": [
+        {"name": "name", "label": "List Variable", "kind": "string", "default": "items"},
+        {"name": "type", "label": "Item Type", "kind": "menu", "default": "int",
+         "menu": ["float", "int", "vector", "vector2", "vector4", "string", "matrix"],
+         "retypes": ["item"]}
+      ],
+      "inputs": [{"name": "item", "type": "any", "label": "Item"}],
+      "tags": ["append", "push", "collect", "gather", "array"]
+    }
+  ]
+}

@@ -1,0 +1,229 @@
+{
+  "version": 1,
+  "run_over": "points",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "neighbours",
+      "type": "nearest_points",
+      "params": {
+        "input": "0",
+        "radius": "0.5",
+        "maximum": "8"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "total",
+      "type": "var_make",
+      "params": {
+        "name": "total",
+        "type": "vector",
+        "value": "{0, 0, 0}"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "each",
+      "type": "foreach",
+      "params": {
+        "type": "int"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "their_colour",
+      "type": "read_point_attribute",
+      "params": {
+        "input": "0",
+        "attrib": "Cd",
+        "type": "vector"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "running",
+      "type": "var_get",
+      "params": {
+        "name": "total",
+        "type": "vector"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "accumulate",
+      "type": "add",
+      "params": {
+        "type": "vector"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "store",
+      "type": "var_set",
+      "params": {
+        "name": "total",
+        "type": "vector"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "final",
+      "type": "var_get",
+      "params": {
+        "name": "total",
+        "type": "vector"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "how_many",
+      "type": "list_length",
+      "params": {
+        "type": "int"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "average",
+      "type": "divide",
+      "params": {
+        "type": "vector"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "write",
+      "type": "attrib_set",
+      "params": {
+        "attrib": "Cd",
+        "type": "vector"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "links": [
+    {
+      "from": "start",
+      "out": "exec",
+      "to": "total",
+      "in": "exec",
+      "exec": true
+    },
+    {
+      "from": "total",
+      "out": "exec",
+      "to": "each",
+      "in": "exec",
+      "exec": true
+    },
+    {
+      "from": "each",
+      "out": "exec",
+      "to": "write",
+      "in": "exec",
+      "exec": true
+    },
+    {
+      "from": "each",
+      "out": "body",
+      "to": "store",
+      "in": "exec",
+      "exec": true
+    },
+    {
+      "from": "neighbours",
+      "out": "point_numbers",
+      "to": "each",
+      "in": "items"
+    },
+    {
+      "from": "each",
+      "out": "item",
+      "to": "their_colour",
+      "in": "point_number"
+    },
+    {
+      "from": "running",
+      "out": "value",
+      "to": "accumulate",
+      "in": "a"
+    },
+    {
+      "from": "their_colour",
+      "out": "value",
+      "to": "accumulate",
+      "in": "b"
+    },
+    {
+      "from": "accumulate",
+      "out": "result",
+      "to": "store",
+      "in": "value"
+    },
+    {
+      "from": "neighbours",
+      "out": "point_numbers",
+      "to": "how_many",
+      "in": "items"
+    },
+    {
+      "from": "final",
+      "out": "value",
+      "to": "average",
+      "in": "a"
+    },
+    {
+      "from": "how_many",
+      "out": "count",
+      "to": "average",
+      "in": "b"
+    },
+    {
+      "from": "average",
+      "out": "result",
+      "to": "write",
+      "in": "value"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<pythonPanelDocument>
+  <interface name="vexgraph" label="VEXgraph" icon="SOP_attribwrangle"
+             showNetworkNavigationBar="false" help_url="">
+    <script><![CDATA[
+import vexgraph_houdini
+
+
+def createInterface():
+    return vexgraph_houdini.createInterface()
+]]></script>
+    <includeInToolbarMenu menu_position="300" create_separator="false"/>
+  </interface>
+</pythonPanelDocument>

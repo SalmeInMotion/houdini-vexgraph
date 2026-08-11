@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "run_over": "points",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "closest",
+      "type": "closest_surface_point",
+      "params": {
+        "input": "1"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "falloff",
+      "type": "fit_range",
+      "params": {
+        "old_min": "0",
+        "old_max": "2",
+        "new_min": "1",
+        "new_max": "0"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "colour",
+      "type": "make_vector",
+      "params": {
+        "y": "0",
+        "z": "0"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "write",
+      "type": "attrib_set",
+      "params": {
+        "attrib": "Cd",
+        "type": "vector"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "too_far",
+      "type": "is_greater",
+      "params": {
+        "b": "2"
+      },
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "cull",
+      "type": "if",
+      "pos": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "kill",
+      "type": "remove_point",
+      "pos": [
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "links": [
+    {
+      "from": "start",
+      "out": "exec",
+      "to": "write",
+      "in": "exec",
+      "exec": true
+    },
+    {
+      "from": "write",
+      "out": "exec",
+      "to": "cull",
+      "in": "exec",
+      "exec": true
+    },
+    {
+      "from": "cull",
+      "out": "then",
+      "to": "kill",
+      "in": "exec",
+      "exec": true
+    },
+    {
+      "from": "closest",
+      "out": "distance",
+      "to": "falloff",
+      "in": "value"
+    },
+    {
+      "from": "falloff",
+      "out": "result",
+      "to": "colour",
+      "in": "x"
+    },
+    {
+      "from": "colour",
+      "out": "result",
+      "to": "write",
+      "in": "value"
+    },
+    {
+      "from": "closest",
+      "out": "distance",
+      "to": "too_far",
+      "in": "a"
+    },
+    {
+      "from": "too_far",
+      "out": "result",
+      "to": "cull",
+      "in": "condition"
+    }
+  ]
+}

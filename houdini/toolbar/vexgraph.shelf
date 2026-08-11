@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<shelfDocument>
+  <!-- Only the "open the editor" tool is on the shelf. vexgraph_new is defined
+       below but deliberately not a member: it reaches the SOP Tab menu through
+       its toolMenuContext, and putting it here too just makes a second button
+       that does almost the same thing. -->
+  <toolshelf name="vexgraph" label="VEXgraph">
+    <memberTool name="vexgraph_open"/>
+  </toolshelf>
+
+  <tool name="vexgraph_open" label="VEXgraph" icon="SOP_attribwrangle">
+    <helpText><![CDATA[Open the VEXgraph editor.
+
+Select an Attribute Wrangle first to edit its graph, or press the button with
+nothing selected and use New Wrangle inside the panel.]]></helpText>
+    <script scriptType="python"><![CDATA[
+import vexgraph_houdini
+
+vexgraph_houdini.open_for_node()
+]]></script>
+  </tool>
+
+  <!-- The Tab-menu entry. It makes a real Attribute Wrangle rather than a
+       custom node type: a wrangle inside a subnet resolves ch() against the
+       inner node, so spare parameters created from the VEX would be looked for
+       in the wrong place. Being an ordinary wrangle means ch(), chramp() and
+       the Create Spare Parameters button all behave exactly as they always do,
+       with nothing for this project to keep working. -->
+  <tool name="vexgraph_new" label="VEXgraph Wrangle" icon="SOP_attribwrangle">
+    <helpText><![CDATA[Create an Attribute Wrangle and open the VEXgraph editor on it.
+
+The node is a normal Attribute Wrangle, so channel references, spare
+parameters and ramps work exactly as they do on any wrangle. VEXgraph stores
+its node graph alongside the VEX it generates.]]></helpText>
+    <toolMenuContext name="network">
+      <contextNetType>SOP</contextNetType>
+    </toolMenuContext>
+    <toolSubmenu>VEXgraph</toolSubmenu>
+    <script scriptType="python"><![CDATA[
+import vexgraph_houdini
+
+vexgraph_houdini.create_wrangle(kwargs)
+]]></script>
+  </tool>
+</shelfDocument>

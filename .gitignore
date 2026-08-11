@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Test and tool caches
+.pytest_cache/
+.ruff_cache/
+
+# Houdini backup files, which it drops next to whatever it saves
+backup/
+*.hip.bak
+*.hda.bak
+
+# Generated: nodes/vex_functions.json is built from the local Houdini install
+# by tools/regenerate.py, so it differs per Houdini version and is not source.
+# It is committed anyway - see the README - because without it the tool has
+# only the 64 curated nodes until someone runs the generator.
