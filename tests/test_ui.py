@@ -946,3 +946,57 @@ def test_live_apply_can_be_turned_off(editor):
         item.ports[("exec", True)])
     editor._auto_apply()
     assert not applied
+
+
+def test_typing_claims_every_key_from_the_host(editor):
+    """Houdini binds the arrows to frame stepping and Home/End to the range.
+
+    While a text field has focus those belong to the field, so the filter has
+    to claim them from Houdini - not only the printable keys. Without this,
+    moving the cursor through a word scrubbed the timeline.
+    """
+    editor.show()
+    QtWidgets.QApplication.processEvents()
+    editor.assistant.input.setFocus(QtCore.Qt.FocusReason.OtherFocusReason)
+    QtWidgets.QApplication.processEvents()
+
+    for key in (QtCore.Qt.Key.Key_Left, QtCore.Qt.Key.Key_Right,
+                QtCore.Qt.Key.Key_Home, QtCore.Qt.Key.Key_End,
+                QtCore.Qt.Key.Key_Up, QtCore.Qt.Key.Key_Down):
+        event = QtGui.QKeyEvent(QtCore.QEvent.Type.ShortcutOverride, key,
+                                QtCore.Qt.KeyboardModifier.NoModifier)
+        claimed = editor.eventFilter(editor.assistant.input, event)
+        assert claimed and event.isAccepted(), (
+            f"{key} would reach Houdini and move the playbar instead")
+
+
+def test_arrow_keys_on_the_canvas_are_left_alone(editor):
+    """Nothing is being typed into, so the host may keep its own bindings."""
+    editor.show()
+    QtWidgets.QApplication.processEvents()
+    editor.view.setFocus(QtCore.Qt.FocusReason.OtherFocusReason)
+    QtWidgets.QApplication.processEvents()
+
+    event = QtGui.QKeyEvent(QtCore.QEvent.Type.ShortcutOverride,
+                            QtCore.Qt.Key.Key_Left,
+                            QtCore.Qt.Key.Key_unknown and
+                            QtCore.Qt.KeyboardModifier.NoModifier)
+    assert not editor.eventFilter(editor.view, event)
+
+
+def test_inline_vex_gets_a_multi_line_editor(app, registry):
+    """The escape hatch holds exactly the code that was too involved to model,
+    so it is never one short line - a one-line pill was the wrong shape."""
+    from vexgraph.ui.items import CodeRow
+
+    assert registry.require("inline_vex").param("code").kind == "text"
+    graph = Graph(registry)
+    scene = GraphScene(graph)
+    item = scene.add_node("inline_vex", QtCore.QPointF(0, 0))
+    row = next(r for r in item.rows if r.key == "param:code")
+    assert isinstance(row, CodeRow)
+
+    row.set_value("int i = 0;\nfor (i = 0; i < 3; i++) {\n    @P += 1;\n}")
+    assert "4 lines" in row.summary(), row.summary()
+    row.set_value("")
+    assert "click to write" in row.summary()

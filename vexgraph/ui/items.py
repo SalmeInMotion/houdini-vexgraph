@@ -346,6 +346,47 @@ class TextRow(RowItem):
         super().mousePressEvent(event)
 
 
+class CodeRow(RowItem):
+    """Several lines of VEX, edited in a window rather than in a pill.
+
+    A one-line field is the wrong shape for the escape hatch: whatever ends up
+    in Inline VEX is exactly the code that was too involved to model, so it is
+    never one short line. The row shows what is in there and how much; a click
+    opens a proper editor that can be resized.
+    """
+
+    def __init__(self, node_item, key, label, width):
+        super().__init__(node_item, key, label, width)
+        self.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
+
+    def summary(self) -> str:
+        lines = [line for line in self.value().splitlines() if line.strip()]
+        if not lines:
+            return "(empty) - click to write"
+        first = lines[0].strip()
+        if len(lines) == 1:
+            return first
+        return f"{first[:28]}…  ({len(lines)} lines)"
+
+    def paint(self, painter, option, widget=None) -> None:
+        self._paint_pill(painter)
+        font = theme.mono_font(8)
+        painter.setFont(font)
+        rect = self.boundingRect().adjusted(10, 0, -10, 0)
+        painter.setPen(theme.ROW_VALUE_TEXT)
+        painter.drawText(rect, int(QtCore.Qt.AlignmentFlag.AlignLeft
+                                   | QtCore.Qt.AlignmentFlag.AlignVCenter),
+                         _elide(self.summary(), font, rect.width()))
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self.claim_selection()
+            self.node_item.edit_row_code(self)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+
 # --------------------------------------------------------------------- nodes
 
 class NodeItem(QtWidgets.QGraphicsItem):
@@ -526,6 +567,8 @@ class NodeItem(QtWidgets.QGraphicsItem):
         if param.kind in ("int", "float"):
             return NumberRow(self, key, param.title, width,
                              integer=param.kind == "int")
+        if param.kind == "text":
+            return CodeRow(self, key, param.title, width)
         return TextRow(self, key, param.title, width)
 
     def _row_for_socket(self, socket: SocketDef, width: float) -> RowItem:
@@ -564,6 +607,11 @@ class NodeItem(QtWidgets.QGraphicsItem):
         scene = self.scene()
         if scene is not None and hasattr(scene, "edit_row"):
             scene.edit_row(row)
+
+    def edit_row_code(self, row: RowItem) -> None:
+        scene = self.scene()
+        if scene is not None and hasattr(scene, "edit_row_code"):
+            scene.edit_row_code(row)
 
     def open_menu(self, row: RowItem, options: list[str]) -> None:
         scene = self.scene()

@@ -379,6 +379,49 @@ class GraphScene(QtWidgets.QGraphicsScene):
         line.setFocus(QtCore.Qt.FocusReason.MouseFocusReason)
         QtCore.QTimer.singleShot(0, take_focus)
 
+    def edit_row_code(self, row: RowItem) -> None:
+        """A resizable window for the multi-line fields.
+
+        Deliberately not a bigger pill on the node: the canvas is for the shape
+        of the graph, and a block of code pasted into it makes every other node
+        harder to see. The window remembers the size it was left at.
+        """
+        from .codeview import VexHighlighter  # noqa: PLC0415 - avoids a cycle
+
+        views = self.views()
+        dialog = QtWidgets.QDialog(views[0] if views else None)
+        dialog.setWindowTitle(f"Edit {row.label}")
+        dialog.resize(*GraphScene._code_editor_size)
+        dialog.setSizeGripEnabled(True)
+
+        editor = QtWidgets.QPlainTextEdit(row.value())
+        editor.setFont(theme.mono_font(10))
+        editor.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
+        editor.setTabStopDistance(
+            QtGui.QFontMetricsF(editor.font()).horizontalAdvance(" ") * 4)
+        VexHighlighter(editor.document())
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.addWidget(editor, 1)
+        layout.addWidget(buttons)
+        editor.setFocus(QtCore.Qt.FocusReason.OtherFocusReason)
+
+        accepted = dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted
+        GraphScene._code_editor_size = (dialog.width(), dialog.height())
+        if accepted:
+            row.set_value(editor.toPlainText())
+            self.value_changed(row.node_item, retyped=False)
+
+    # Shared so the window opens at whatever size it was last left, which is
+    # the closest thing to "let me size the box myself" that a dialog offers.
+    _code_editor_size = (760, 460)
+
     @property
     def is_editing(self) -> bool:
         """Whether a field on a node currently owns the keyboard."""

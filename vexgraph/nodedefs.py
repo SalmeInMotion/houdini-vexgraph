@@ -190,7 +190,9 @@ def _param(raw: dict) -> ParamDef:
     if not name:
         raise NodeDefError("param without a name")
     kind = raw.get("kind", "string")
-    if kind not in ("string", "int", "float", "menu", "vextype", "attrib"):
+    # "text" is "string, but several lines of it" - it gets a resizable window
+    # instead of a one-line pill on the node.
+    if kind not in ("string", "text", "int", "float", "menu", "vextype", "attrib"):
         raise NodeDefError(f"param {name!r} has unknown kind {kind!r}")
     return ParamDef(
         name=name,

@@ -583,7 +583,7 @@
         {
           "name": "code",
           "label": "VEX",
-          "kind": "string",
+          "kind": "text",
           "default": "// your VEX here"
         }
       ],

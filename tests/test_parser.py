@@ -221,3 +221,43 @@ def test_the_report_says_what_it_could_not_translate(registry):
     report = import_vex("while (1) { @P += 1; }", registry)
     assert "Inline VEX" in report.summary()
     assert any("while" in reason for reason in report.reasons)
+
+
+def test_single_quoted_strings_are_read(registry):
+    """`ch('parm')` is valid VEX and the commonest spelling in real snippets.
+
+    Rejecting it was the single largest reason working code fell through to
+    Inline VEX - 88 of the installed snippets.
+    """
+    code, report = imported("@pscale = ch('size');", registry)
+    assert report.inlined == 0
+    assert '"size"' in code, "quotes should be normalised on the way in"
+    assert "'" not in code, "a single quote should not survive to the output"
+
+
+def test_a_component_can_be_assigned(registry):
+    """`@P.x = v` reads the vector, rebuilds it and writes it back."""
+    code, report = imported("@P.x = 1.5;", registry)
+    assert report.inlined == 0
+    assert "@P = set(1.5," in code
+    assert compile_check(generate(report.graph)).ok
+
+
+def test_sop_globals_are_not_undeclared_variables(registry):
+    """`Time` is provided by the SOP context; treating it as a variable cost
+    every statement that used it, and everything downstream of those."""
+    code, report = imported("float t = Time * 0.5;\n@pscale = t;", registry)
+    assert report.inlined == 0
+    assert "@Time" in code, "SideFX recommend the @ spelling"
+
+
+def test_an_array_attribute_is_read(registry):
+    """`i[]@hits` binds a list; the `[]` sits between the prefix and the `@`."""
+    tokens = tokenize("i[]@hits")
+    assert tokens[0].kind is Kind.ATTRIB
+    assert tokens[0].text == "hits"
+    assert tokens[0].prefix == "i"
+    assert tokens[0].is_array
+
+    plain = tokenize("v@up")[0]
+    assert plain.prefix == "v" and not plain.is_array

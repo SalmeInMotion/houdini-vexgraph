@@ -48,8 +48,10 @@ NUMBER_RE = re.compile(r"\d+\.\d*(?:[eE][-+]?\d+)?|\.\d+(?:[eE][-+]?\d+)?"
                        r"|\d+(?:[eE][-+]?\d+)?")
 NAME_RE = re.compile(r"[A-Za-z_]\w*")
 # A type prefix is a single character; `@` on its own means "figure the type out
-# from the attribute's name", which is what a wrangle does too.
-ATTRIB_RE = re.compile(r"([fivpu234sd]?)@(\w+)")
+# from the attribute's name", which is what a wrangle does too. The optional
+# `[]` between the two is how an array attribute is spelled - `i[]@hits` is an
+# int array - and not reading it stopped every snippet that uses one.
+ATTRIB_RE = re.compile(r"([fivpu234sd]?)(\[\])?@(\w+)")
 
 
 class LexError(SyntaxError):
@@ -68,6 +70,8 @@ class Token:
     line: int
     # Attribute tokens only: the `v` of `v@up`, empty when the name carries it.
     prefix: str = ""
+    # Attribute tokens only: `i[]@hits` binds an array rather than one value.
+    is_array: bool = False
 
     def __repr__(self) -> str:
         return f"{self.kind.value}({self.text!r})"
@@ -109,15 +113,25 @@ def tokenize(source: str) -> list[Token]:
 
         start = index
 
-        if char == '"':
+        # VEX takes either quote, and hand-written snippets use `ch('parm')`
+        # constantly. Only accepting double quotes was the single biggest
+        # reason real code fell through to Inline VEX.
+        if char in "\"'":
+            quote = char
             index += 1
-            while index < length and source[index] != '"':
+            while index < length and source[index] != quote:
                 # A backslash escapes the next character, quote included.
                 index += 2 if source[index] == "\\" else 1
             if index >= length:
                 raise LexError("unterminated string", start, line)
             index += 1
-            tokens.append(Token(Kind.STRING, source[start:index], start, index, line))
+            text = source[start:index]
+            if quote == "'":
+                # Normalised on the way in, so everything downstream - the
+                # emitter included - only ever deals with one spelling.
+                inner = text[1:-1].replace('"', '\\"')
+                text = f'"{inner}"'
+            tokens.append(Token(Kind.STRING, text, start, index, line))
             continue
 
         # `$PI`, `$F`, `$T`: hscript variables, which Houdini expands inside a
@@ -131,11 +145,15 @@ def tokenize(source: str) -> list[Token]:
                                     start, index, line))
                 continue
 
+        # The regex itself requires an `@`, so a match here *is* an attribute.
+        # The old guard looked one character ahead for it, which missed
+        # `i[]@hits` where the `@` is three characters along.
         match = ATTRIB_RE.match(source, index)
-        if match and (char == "@" or (index + 1 < length and source[index + 1] == "@")):
+        if match:
             index = match.end()
-            tokens.append(Token(Kind.ATTRIB, match.group(2), start, index, line,
-                                prefix=match.group(1)))
+            tokens.append(Token(Kind.ATTRIB, match.group(3), start, index, line,
+                                prefix=match.group(1),
+                                is_array=bool(match.group(2))))
             continue
 
         match = NUMBER_RE.match(source, index)

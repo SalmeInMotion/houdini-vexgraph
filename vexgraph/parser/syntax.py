@@ -40,6 +40,7 @@ class VectorLiteral(Expr):
 class Attribute(Expr):
     name: str
     prefix: str = ""
+    is_array: bool = False
 
 
 @dataclass
@@ -510,7 +511,7 @@ class Parser:
 
         if token.kind is Kind.ATTRIB:
             self.advance()
-            return Attribute(token.text, token.prefix)
+            return Attribute(token.text, token.prefix, token.is_array)
 
         if token.kind is Kind.HSCRIPT:
             self.advance()

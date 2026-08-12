@@ -316,11 +316,18 @@ class VexGraphEditor(QtWidgets.QWidget):
         focus = QtWidgets.QApplication.focusWidget()
         if focus is None or not self.isAncestorOf(focus):
             return super().eventFilter(watched, event)
-        # Anything being typed into belongs to whatever is being typed into,
-        # including the node's own inline editor.
+
+        # Typing into a text field claims *everything*, not just the printable
+        # keys. Houdini binds the arrows to frame stepping and Home/End to the
+        # frame range, so without this an attempt to move the cursor through a
+        # word scrubs the timeline instead. Letting the widget have the event
+        # and stopping it there is the whole fix.
         if self.scene.is_editing or isinstance(
                 focus, (QtWidgets.QLineEdit, QtWidgets.QPlainTextEdit,
                         QtWidgets.QTextEdit, QtWidgets.QAbstractSpinBox)):
+            if event.type() == QtCore.QEvent.Type.ShortcutOverride:
+                event.accept()
+                return True          # "this key is mine", to Houdini
             return super().eventFilter(watched, event)
 
         key, modifiers = event.key(), event.modifiers()

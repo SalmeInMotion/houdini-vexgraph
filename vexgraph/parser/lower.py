@@ -51,6 +51,18 @@ STANDARD_ATTRIBUTES = {
 
 PREFIX_TYPES = {v: k for k, v in vextypes.ATTR_PREFIX.items()}
 
+# Globals the SOP context provides without an `@`, and the attribute each one
+# is the same thing as. Documented on the Point Wrangle page; snippets written
+# by hand use the bare spelling often, and reading them as undeclared variables
+# sent whole snippets to Inline VEX - along with everything that depended on
+# them, which is how one unknown name cost a dozen nodes.
+SOP_GLOBALS = {
+    "Time": ("Time", "float"),
+    "Frame": ("Frame", "float"),
+    "TimeInc": ("TimeInc", "float"),
+    "Npt": ("numpt", "int"),
+}
+
 # How wide a type is, for working out what `int + vector` comes to.
 WIDTH = {"int": 0, "float": 1, "vector2": 2, "vector": 3, "vector4": 4}
 
@@ -383,7 +395,51 @@ class Importer:
             self._feed(node.id, "value", self._expression(value))
             return node.id
 
+        if isinstance(statement.target, Member):
+            return self._assign_component(statement.target, value)
+
         raise Unsupported("only attributes and variables can be assigned")
+
+    def _assign_component(self, target: Member, value: Expr) -> str:
+        """`@P.x = v` as nodes: read the vector, rebuild it, write it back.
+
+        There is no "poke one component" node and there should not be - a graph
+        edge carries a value, not a reference into one. Splitting and remaking
+        says the same thing with nodes that already exist, and emits
+        `@P = set(v, @P.y, @P.z)`, which is what it means.
+        """
+        if target.name not in ("x", "y", "z"):
+            raise Unsupported(f".{target.name} cannot be assigned")
+        if not isinstance(target.target, (Attribute, Name)):
+            raise Unsupported("only an attribute or a variable can be rebuilt "
+                              "component by component")
+
+        current = self._expression(target.target)
+        split = self.graph.add("split_vector", self._name("split"))
+        self._feed(split.id, "vector", current)
+
+        make = self.graph.add("make_vector", self._name("rebuilt"))
+        for axis in ("x", "y", "z"):
+            if axis == target.name:
+                self._feed(make.id, axis, self._expression(value))
+            else:
+                self._feed(make.id, axis,
+                           Value(node=split.id, socket=axis, type="float"))
+
+        rebuilt = Value(node=make.id, socket="result", type="vector")
+        if isinstance(target.target, Attribute):
+            node = self.graph.add(
+                "attrib_set", self._name("set"),
+                attrib=target.target.name,
+                type=self._attribute_type(target.target))
+        else:
+            name = target.target.name
+            if name not in self.variables:
+                raise Unsupported(f"{name} was never declared here")
+            node = self.graph.add("var_set", self._name("set"), name=name,
+                                  type=self.variables[name])
+        self._feed(node.id, "value", rebuilt)
+        return node.id
 
     def _call_statement(self, statement: ExprStatement) -> str:
         if not isinstance(statement.value, Call):
@@ -497,6 +553,15 @@ class Importer:
                 node_id, socket = self._loop_indices[expr.name]
                 return Value(node=node_id, socket=socket,
                              type=self.variables.get(expr.name, "int"))
+            if expr.name in SOP_GLOBALS:
+                # `Time` and friends are globals the SOP context provides, not
+                # undeclared variables. SideFX recommend the `@` spelling, and
+                # that is exactly what the Get Attribute node emits - so this
+                # reads as the attribute it is, and round-trips as `@Time`.
+                attribute, vex_type = SOP_GLOBALS[expr.name]
+                node = self.graph.add("attrib_get", self._name("global"),
+                                      attrib=attribute, type=vex_type)
+                return Value(node=node.id, socket="value", type=vex_type)
             if expr.name not in self.variables:
                 raise Unsupported(f"{expr.name} was never declared here")
             self._read.add(expr.name)
@@ -665,9 +730,13 @@ class Importer:
 
     def _attribute_type(self, expr: Attribute) -> str:
         if expr.prefix:
-            return PREFIX_TYPES.get(expr.prefix, "float")
-        base = expr.name.split("_", 1)[-1] if expr.name.startswith("opinput") else expr.name
-        return STANDARD_ATTRIBUTES.get(base, "float")
+            element = PREFIX_TYPES.get(expr.prefix, "float")
+        else:
+            base = (expr.name.split("_", 1)[-1] if expr.name.startswith("opinput")
+                    else expr.name)
+            element = STANDARD_ATTRIBUTES.get(base, "float")
+        # `i[]@hits` binds a list of ints, not one.
+        return f"{element}[]" if getattr(expr, "is_array", False) else element
 
     @staticmethod
     def _vector_type(count: int) -> str:
