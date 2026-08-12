@@ -13,17 +13,29 @@ than trusted.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
-# Where OD's file usually sits, and the env var that overrides it. A user file
-# is also read, so people can keep their own without editing anyone's install.
-OD_DEFAULT = Path(r"P:\Resources\Add-ons\Houdini\ODHoudiniShelfTools2021"
-                  r"\VEXpressions.txt")
+# OD ships two stores, in two formats. The .txt drives the parameter menus; the
+# .json is the Snippets panel, and is both larger and better labelled - it
+# carries a description, an author and a category per entry.
+OD_ROOT = Path(r"P:\Resources\Add-ons\Houdini\ODHoudiniShelfTools2021")
+OD_DEFAULTS = (
+    OD_ROOT / "python_panels" / "shippedSnippets.json",
+    OD_ROOT / "python_panels" / "snippets.json",     # the user's own additions
+    OD_ROOT / "VEXpressions.txt",
+)
 ENV_PATH = "VEXGRAPH_SNIPPETS"
-USER_FILE = "vexgraph_snippets.txt"
+USER_FILES = ("vexgraph_snippets.txt", "vexgraph_snippets.json")
+
+# Categories in the JSON store that are not VEX. Links are bookmarks - 563 of
+# them - and would bury the snippets that can actually become nodes.
+NON_VEX_TYPES = {"Links", "Notes", "Python Nodes", "Python Tools"}
 
 # The Houdini contexts whose code is a wrangle snippet. A POP force expression
 # is VEX too, but it runs with different bindings and is not what this tool
@@ -41,6 +53,9 @@ class Snippet:
     code: str
     context: str            # "attribwrangle/snippet" as written in the file
     source: str = ""        # which file it came from, for the tooltip
+    description: str = ""
+    author: str = ""
+    group: str = ""         # the JSON store's own category, when it has one
 
     @property
     def node_type(self) -> str:
@@ -48,7 +63,13 @@ class Snippet:
 
     @property
     def category(self) -> str:
-        """Grouping for the list: the wrangles together, the rest by context."""
+        """Grouping for the list.
+
+        The JSON store already sorts its entries sensibly ("Point Wrangles"),
+        so that is used as-is; the .txt store has only a context to go on.
+        """
+        if self.group:
+            return self.group
         node = self.node_type
         if node in WRANGLE_CONTEXTS:
             return "Wrangles"
@@ -68,20 +89,76 @@ def search_paths() -> list[Path]:
     if override:
         found += [Path(p) for p in override.split(os.pathsep) if p]
     else:
-        found.append(OD_DEFAULT)
-    found.append(Path.home() / USER_FILE)
+        found += list(OD_DEFAULTS)
+    found += [Path.home() / name for name in USER_FILES]
     return [p for p in found if p.is_file()]
 
 
 def load() -> list[Snippet]:
+    """Every snippet from every store, with duplicates by name removed."""
     out: list[Snippet] = []
+    seen: set[tuple[str, str]] = set()
     for path in search_paths():
         try:
             text = path.read_text(encoding="utf8", errors="replace")
         except OSError:
             continue
-        out += parse(text, source=path.name)
+        reader = parse_json if path.suffix.lower() == ".json" else parse
+        for snippet in reader(text, source=path.name):
+            key = (snippet.name.lower(), snippet.code)
+            if key in seen:
+                continue        # the two stores overlap
+            seen.add(key)
+            out.append(snippet)
     return out
+
+
+def parse_json(text: str, source: str = "") -> list[Snippet]:
+    """OD's Snippets panel store: one object per snippet, code in base64.
+
+    Anything that fails to decode is skipped rather than shown as mojibake -
+    this is a live file people add to from inside Houdini.
+    """
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(data, dict):
+        return []
+
+    out: list[Snippet] = []
+    for entry in data.values():
+        if not isinstance(entry, dict):
+            continue
+        kind = (entry.get("type") or "").strip()
+        if kind in NON_VEX_TYPES:
+            continue            # bookmarks and Python, not VEX
+        raw = entry.get("snippet") or ""
+        try:
+            code = base64.b64decode(raw).decode("utf8", "replace").strip()
+        except (binascii.Error, ValueError):
+            continue
+        name = (entry.get("name") or "").strip()
+        if not name or not code:
+            continue
+        out.append(Snippet(
+            name=name, code=code,
+            context=_context_for(kind), source=source,
+            description=(entry.get("description") or "").strip(),
+            author=(entry.get("author") or "").strip(),
+            group=kind or "Snippets"))
+    return sorted(out, key=lambda s: (s.group, s.name.lower()))
+
+
+def _context_for(kind: str) -> str:
+    """Map the JSON store's category onto the node type it is written for."""
+    word = kind.lower().replace(" wrangles", "").replace(" ", "")
+    known = {"point": "pointwrangle", "primitive": "primitivewrangle",
+             "detail": "detailwrangle", "vertex": "vertexwrangle",
+             "volume": "volumewrangle", "pop": "poppwrangle",
+             "rig": "deformationwrangle", "gasfield": "volumewrangle",
+             "vexpressions": "attribexpression"}
+    return f"{known.get(word, 'attribwrangle')}/snippet"
 
 
 _HEADER_RE = re.compile(r"^(\w+/\w+)\s*$")

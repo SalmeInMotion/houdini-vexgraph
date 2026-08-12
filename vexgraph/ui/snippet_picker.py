@@ -93,7 +93,8 @@ class SnippetPicker(QtWidgets.QDialog):
         words = query.lower().split()
         groups: dict[str, QtWidgets.QTreeWidgetItem] = {}
         for snippet in self._snippets:
-            haystack = f"{snippet.name} {snippet.context} {snippet.code}".lower()
+            haystack = (f"{snippet.name} {snippet.description} "
+                        f"{snippet.context} {snippet.code}").lower()
             if not all(word in haystack for word in words):
                 continue
             parent = groups.get(snippet.category)
@@ -106,6 +107,8 @@ class SnippetPicker(QtWidgets.QDialog):
                 groups[snippet.category] = parent
             item = QtWidgets.QTreeWidgetItem(parent, [snippet.name])
             item.setData(0, QtCore.Qt.ItemDataRole.UserRole, snippet)
+            if snippet.description:
+                item.setToolTip(0, snippet.description)
             if not snippet.is_wrangle:
                 # Still readable, but it belongs to a node this tool does not
                 # write - say so rather than letting it look interchangeable.
@@ -127,7 +130,15 @@ class SnippetPicker(QtWidgets.QDialog):
             return
         self.code.setPlainText(snippet.code)
         report = import_vex(snippet.code, self.registry)
-        self.summary.setText(f"{snippet.context} — {report.summary()}")
+        lines = []
+        if snippet.description:
+            lines.append(f"<b>{snippet.description}</b>")
+        if snippet.author:
+            lines.append(f"<span style='color:#8a8a8a'>by {snippet.author}</span>")
+        lines.append(f"<span style='color:#8a8a8a'>{snippet.context} — "
+                     f"{report.summary()}</span>")
+        self.summary.setText("<br>".join(lines))
+        self.summary.setOpenExternalLinks(True)
 
     def _accept(self) -> None:
         snippet = self._selected()

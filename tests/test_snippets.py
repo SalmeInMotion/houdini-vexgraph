@@ -100,3 +100,58 @@ def test_nothing_from_the_licensed_file_is_committed():
             continue
         assert "VEXpression" not in path.name, \
             f"{path} looks like a copy of the licensed snippet file"
+
+
+JSON_SAMPLE = """{
+  "111": {"author": "Someone", "description": "Tapers on Y",
+          "name": "Taper on Y", "type": "Point Wrangles",
+          "snippet": "QFAgKj0gMjsK"},
+  "222": {"author": "", "description": "a bookmark", "name": "CGWiki",
+          "type": "Links", "snippet": "aHR0cHM6Ly9leGFtcGxlLmNvbQ=="},
+  "333": {"author": "", "description": "", "name": "Broken",
+          "type": "Point Wrangles", "snippet": "!!!not base64!!!"},
+  "444": {"author": "", "description": "", "name": "", 
+          "type": "Detail Wrangles", "snippet": "QFAgKj0gMjsK"}
+}"""
+
+
+def test_the_json_store_is_read_and_decoded():
+    found = snippets.parse_json(JSON_SAMPLE, source="shippedSnippets.json")
+    assert [s.name for s in found] == ["Taper on Y"]
+    assert found[0].code == "@P *= 2;"
+    assert found[0].description == "Tapers on Y"
+    assert found[0].author == "Someone"
+    assert found[0].group == "Point Wrangles"
+
+
+def test_bookmarks_and_broken_entries_are_left_out():
+    """563 of the entries are links; they would bury the actual snippets."""
+    found = snippets.parse_json(JSON_SAMPLE)
+    names = {s.name for s in found}
+    assert "CGWiki" not in names, "a Links entry is not VEX"
+    assert "Broken" not in names, "undecodable base64 must be skipped"
+    assert "" not in names, "an unnamed entry must be skipped"
+
+
+def test_a_json_category_becomes_the_wrangle_context():
+    found = snippets.parse_json(JSON_SAMPLE)
+    assert found[0].context == "pointwrangle/snippet"
+    assert found[0].is_wrangle
+
+
+def test_malformed_json_is_not_an_error():
+    assert snippets.parse_json("{not json") == []
+    assert snippets.parse_json("[]") == []
+
+
+def test_the_same_snippet_in_both_stores_is_listed_once(monkeypatch, tmp_path):
+    """OD ships overlapping entries in the .txt and the .json."""
+    text_file = tmp_path / "a.txt"
+    text_file.write_text("pointwrangle/snippet\n    Taper on Y\n    @P *= 2;\n")
+    json_file = tmp_path / "b.json"
+    json_file.write_text(JSON_SAMPLE)
+    monkeypatch.setenv(snippets.ENV_PATH,
+                       os.pathsep.join([str(json_file), str(text_file)]))
+
+    names = [s.name for s in snippets.load()]
+    assert names.count("Taper on Y") == 1, f"duplicated: {names}"
