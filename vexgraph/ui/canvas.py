@@ -151,6 +151,13 @@ class GraphScene(QtWidgets.QGraphicsScene):
                     and x.to_node == item.target.node_item.node.id
                     and x.to_socket == item.target.name)]
 
+    def remove_link(self, item: LinkItem) -> None:
+        """Delete one wire and put back the value row it was covering."""
+        self._remove_link_item(item)
+        self.rebuild_links()
+        self._rebuild_rows()
+        self.graph_changed.emit()
+
     def node_moved(self, item: NodeItem) -> None:
         self.refresh_links()
 
@@ -217,6 +224,16 @@ class GraphScene(QtWidgets.QGraphicsScene):
                      if l.target is port), None)
 
     def mousePressEvent(self, event) -> None:
+        # Right-click drops a wire in progress. Escape does too, but keys are
+        # not reliable inside a docked pane, and abandoning a wire is something
+        # you need to be able to do without thinking about it.
+        if (self._drag is not None
+                and event.button() == QtCore.Qt.MouseButton.RightButton):
+            self.cancel_link_drag()
+            self.message.emit("")
+            event.accept()
+            return
+
         if self._sticky and self._drag is not None:
             source_port = self._drag.port
             target = self._port_at(event.scenePos())
@@ -423,6 +440,11 @@ class GraphScene(QtWidgets.QGraphicsScene):
     _code_editor_size = (760, 460)
 
     @property
+    def is_wiring(self) -> bool:
+        """Whether a wire is being dragged or is armed waiting for a click."""
+        return self._drag is not None
+
+    @property
     def is_editing(self) -> bool:
         """Whether a field on a node currently owns the keyboard."""
         return self._editor is not None
@@ -610,6 +632,16 @@ class GraphView(QtWidgets.QGraphicsView):
                                         QtCore.Qt.MouseButton.RightButton)
         space_pan = (event.button() == QtCore.Qt.MouseButton.LeftButton
                      and event.modifiers() & QtCore.Qt.KeyboardModifier.AltModifier)
+        # A wire in progress outranks panning: right-click means "forget it".
+        # The view has to check, because it claims the right button before the
+        # scene ever sees the press.
+        if (event.button() == QtCore.Qt.MouseButton.RightButton
+                and self.scene().is_wiring):
+            self.scene().cancel_link_drag()
+            self.scene().message.emit("")
+            event.accept()
+            return
+
         if pan_button or space_pan:
             self._panning = True
             self._pan_origin = event.position().toPoint()
@@ -693,6 +725,13 @@ class GraphView(QtWidgets.QGraphicsView):
             self.request_node_search(self.mapToScene(event.pos()))
             event.accept()
             return
+        # Double-clicking a wire removes it. The other way - grab the input end
+        # and drop it on nothing - works but has to be discovered.
+        if isinstance(item, LinkItem):
+            self.scene().remove_link(item)
+            event.accept()
+            return
+
         # Double-clicking a node opens Houdini's page for the function behind
         # it. Rows keep their own double-click (they open an editor), so this
         # only fires on the body and title.

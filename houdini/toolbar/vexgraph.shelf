@@ -11,12 +11,18 @@
   <tool name="vexgraph_open" label="VEXgraph" icon="SOP_attribwrangle">
     <helpText><![CDATA[Open the VEXgraph editor.
 
+Opens in its own window, where keyboard shortcuts work normally. To dock it
+instead, use New Pane Tab Type > Python Panel > VEXgraph - but note that
+Houdini claims most keys from a docked pane.
+
 Select an Attribute Wrangle first to edit its graph, or press the button with
 nothing selected and use New Wrangle inside the panel.]]></helpText>
     <script scriptType="python"><![CDATA[
 import vexgraph_houdini
 
-vexgraph_houdini.open_for_node()
+# A window rather than a docked panel: inside a pane, Houdini's hotkey manager
+# sees keys first and the editor's own shortcuts barely work.
+vexgraph_houdini.open_window()
 ]]></script>
   </tool>
 

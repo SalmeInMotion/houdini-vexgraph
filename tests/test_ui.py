@@ -1000,3 +1000,66 @@ def test_inline_vex_gets_a_multi_line_editor(app, registry):
     assert "4 lines" in row.summary(), row.summary()
     row.set_value("")
     assert "click to write" in row.summary()
+
+
+def test_double_clicking_a_wire_removes_it(editor):
+    source = editor.scene.add_node("element_count", QtCore.QPointF(0, 0))
+    target = editor.scene.add_node("for_range", QtCore.QPointF(400, 0))
+    editor.scene.connect_ports(source.ports[("count", False)],
+                               target.ports[("count", True)])
+    assert len(editor.scene.link_items) == 1
+
+    editor.scene.remove_link(editor.scene.link_items[0])
+    assert not editor.scene.link_items
+    assert not editor.scene.graph.links
+    # The value row the wire was covering must come back.
+    target = editor.scene.node_items[target.node.id]
+    assert any(r.key == "in:count" for r in target.rows)
+
+
+def test_right_click_abandons_a_wire_in_progress(editor):
+    source = editor.scene.add_node("element_count", QtCore.QPointF(0, 0))
+    port = source.ports[("count", False)]
+    editor.scene.begin_link_drag(port, port.mapToScene(
+        port.boundingRect().center()))
+    assert editor.scene.is_wiring
+
+    press = QtGui.QMouseEvent(
+        QtCore.QEvent.Type.MouseButtonPress, QtCore.QPointF(10, 10),
+        QtCore.Qt.MouseButton.RightButton, QtCore.Qt.MouseButton.RightButton,
+        QtCore.Qt.KeyboardModifier.NoModifier)
+    editor.view.mousePressEvent(press)
+
+    assert not editor.scene.is_wiring, "right-click should drop the wire"
+    assert not editor.view._panning, "and must not start panning instead"
+
+
+def test_live_apply_skips_writing_the_same_vex_twice(editor):
+    """Re-setting the parm to the same string still recooks the geometry.
+
+    Moving or selecting a node fires graph_changed without changing a
+    character of output, so this is most of what Live was doing.
+    """
+    applied = []
+    editor.applied.connect(applied.append)
+    editor.auto_apply.setChecked(True)
+
+    item = editor.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
+    item.node.params["value"] = "{1, 0, 0}"
+    editor.scene.connect_ports(
+        editor.scene.node_items["start"].ports[("exec", False)],
+        item.ports[("exec", True)])
+    editor._regenerate()
+    editor._auto_apply()
+    assert len(applied) == 1
+
+    # Moving a node changes the graph but not the VEX.
+    item.node.pos = (123.0, 45.0)
+    editor._regenerate()
+    editor._auto_apply()
+    assert len(applied) == 1, "the same VEX was written to the wrangle again"
+
+    item.node.params["attrib"] = "changed"
+    editor._regenerate()
+    editor._auto_apply()
+    assert len(applied) == 2, "a real change should still be written"

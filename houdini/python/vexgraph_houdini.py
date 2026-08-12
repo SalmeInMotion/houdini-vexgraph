@@ -192,6 +192,66 @@ class VexGraphPanel(QtWidgets.QWidget):
         apply_to_node(node, self.editor.graph, code)
 
 
+_WINDOW = None          # one window, reused; a second would fight for the node
+
+
+def open_window(node=None):
+    """Open the editor as its own top-level window.
+
+    This is the answer to the keyboard problem, not a preference. A Python
+    Panel is a *pane inside Houdini's main window*, so Houdini's hotkey manager
+    sees every key first and the panel only gets what is left - which is why
+    Delete, undo and even the arrow keys had to be fought for one at a time. A
+    separate top-level window has its own focus and its own key handling, so
+    shortcuts simply work, the way they do when the editor runs standalone.
+
+    The panel still exists for anyone who wants it docked. The window is what
+    the shelf opens.
+    """
+    global _WINDOW
+
+    parent = None
+    try:
+        import hou.qt  # noqa: PLC0415 - GUI only, absent in hython
+
+        parent = hou.qt.mainWindow()
+    except (ImportError, AttributeError):
+        pass
+
+    if _WINDOW is None or not _shiboken_alive(_WINDOW):
+        _WINDOW = VexGraphWindow(parent)
+    if node is not None:
+        _WINDOW.panel.attach(node)
+    _WINDOW.show()
+    _WINDOW.raise_()
+    _WINDOW.activateWindow()
+    return _WINDOW
+
+
+def _shiboken_alive(widget) -> bool:
+    """Whether the C++ side of a Qt object still exists."""
+    try:
+        widget.objectName()
+    except RuntimeError:
+        return False
+    return True
+
+
+class VexGraphWindow(QtWidgets.QWidget):
+    """The editor in a window of its own, owned by Houdini's main window."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlag(QtCore.Qt.WindowType.Window, True)
+        self.setWindowTitle("VEXgraph")
+        self.resize(1700, 950)
+
+        self.panel = VexGraphPanel(self)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.panel)
+
+
 def create_wrangle(kwargs=None):
     """Make an Attribute Wrangle in the current network and edit it here.
 
@@ -233,7 +293,7 @@ def create_wrangle(kwargs=None):
         # running interface, so a surprise there is reported and the wrangle -
         # which is the part that matters - is still there to work with.
         try:
-            open_for_node(node)
+            open_window(node)
         except Exception as exc:                              # noqa: BLE001
             hou.ui.setStatusMessage(
                 f"VEXgraph: the node was created but the panel did not open "

@@ -98,6 +98,9 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.browser = NodeBrowser(self.registry)
         # Set aside while a proposal is on screen, so Discard is a real undo.
         self._graph_before_proposal: Graph | None = None
+        # The most recent emission, and the text last written to the wrangle.
+        self._last_emission = None
+        self._applied_code = ""
 
         self._build_ui()
         self._install_history()
@@ -146,6 +149,10 @@ class VexGraphEditor(QtWidgets.QWidget):
             # route that does not depend on one arriving.
             ("Delete Node", self.scene.delete_selected,
              "Delete the selected nodes.\nAlso: Delete key, or right-click a node"),
+            # Buttons as well as shortcuts, because inside a docked pane the
+            # shortcuts are Houdini's before they are ours.
+            ("Undo", self.undo, "Undo the last change (Ctrl+Z)"),
+            ("Redo", self.redo, "Redo (Ctrl+Y)"),
             ("Tidy", self.scene.tidy, "Lay the nodes out again"),
             ("Frame", self.view.frame_all, "Fit everything on screen (F)"),
         ):
@@ -483,12 +490,15 @@ class VexGraphEditor(QtWidgets.QWidget):
 
     def _regenerate(self) -> None:
         emission = generate(self.graph)
+        # Kept so the live apply and the compile check do not each generate the
+        # same text again a moment later.
+        self._last_emission = emission
         self.code.set_code(emission.code, emission.line_nodes)
         self._report(emission.issues)
         self._sync_highlight()
 
     def _compile(self) -> None:
-        emission = generate(self.graph)
+        emission = self._last_emission or generate(self.graph)
         if not emission.ok:
             return                              # its own errors come first
         result = compile_check(emission, self.graph)
@@ -637,6 +647,8 @@ class VexGraphEditor(QtWidgets.QWidget):
         # undoing across that boundary would resurrect a graph the user has
         # already moved on from.
         self.history.reset(self.graph.to_dict())
+        self._last_emission = None
+        self._applied_code = ""
         self.scene.graph = self.graph
         self.scene.reload()
         self.run_over.setCurrentText(self.graph.run_over)
@@ -652,25 +664,31 @@ class VexGraphEditor(QtWidgets.QWidget):
                 self, "Not applied",
                 "Fix the problems listed on the right first.")
             return
+        self._applied_code = emission.code
         self.applied.emit(emission.code)
         self._show_message("Applied to the wrangle.")
 
     def _auto_apply(self) -> None:
         """Push the VEX to the wrangle as the graph changes.
 
-        Shares the compile timer's debounce, so the wrangle is written once you
-        stop moving rather than on every keystroke - a wrangle recooks the
-        geometry downstream of it, and doing that per character would make the
-        scene crawl.
+        Three things keep this cheap, because a wrangle recooks everything
+        downstream of it and that is the expensive part, not the codegen:
 
-        A graph with errors is never applied: the last good VEX stays in place
-        rather than the viewport going red halfway through an edit.
+        - it runs off the debounce, not off every change;
+        - it reuses the emission the code pane just produced instead of
+          generating again;
+        - and above all it does nothing when the VEX is byte-for-byte what the
+          wrangle already has. Moving a node, selecting one, or opening a menu
+          all fire graph_changed without altering a character of output, and
+          re-setting the parm to the same string still triggers a full recook.
         """
         if not self.auto_apply.isChecked():
             return
-        emission = generate(self.graph)
-        if emission.ok:
-            self.applied.emit(emission.code)
+        emission = self._last_emission or generate(self.graph)
+        if not emission.ok or emission.code == self._applied_code:
+            return
+        self._applied_code = emission.code
+        self.applied.emit(emission.code)
 
 
 def _ask_for_vex(parent) -> tuple[str, bool]:

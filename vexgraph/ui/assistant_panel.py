@@ -244,6 +244,11 @@ class AssistantPanel(QtWidgets.QWidget):
         self.input.setMaximumHeight(92)
         # Small enough to survive a cramped pane, big enough to type into.
         self.input.setMinimumHeight(40)
+        # Inside a Houdini pane the first click is spent activating the pane,
+        # and Houdini moves focus itself while doing so - after the click has
+        # been delivered. Taking focus again on the next event-loop turn is
+        # what makes one click enough, instead of needing a second.
+        self.input.installEventFilter(self)
 
         self.send = QtWidgets.QPushButton("Ask")
         self.stop = QtWidgets.QPushButton("Stop")
@@ -466,6 +471,18 @@ class AssistantPanel(QtWidgets.QWidget):
     def _settle(self) -> None:
         self.keep.setEnabled(False)
         self.discard.setEnabled(False)
+
+    def eventFilter(self, watched, event) -> bool:
+        if (watched is self.input
+                and event.type() == QtCore.QEvent.Type.MouseButtonPress):
+            QtCore.QTimer.singleShot(0, self._claim_input_focus)
+        return super().eventFilter(watched, event)
+
+    def _claim_input_focus(self) -> None:
+        window = self.window()
+        if window is not None:
+            window.activateWindow()
+        self.input.setFocus(QtCore.Qt.FocusReason.MouseFocusReason)
 
     def _refresh_vram(self) -> None:
         if self._vram_probe is not None or not self.isVisible():
