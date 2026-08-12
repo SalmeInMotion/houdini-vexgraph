@@ -249,15 +249,19 @@ def test_the_model_menu_offers_only_models_that_exist(monkeypatch):
     import os
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6 import QtWidgets
+    from PySide6 import QtCore, QtWidgets
 
     from vexgraph.assistant import providers as provider_module  # the module
     from vexgraph.nodedefs import default_registry
     from vexgraph.ui import assistant_panel
 
     QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    monkeypatch.setattr(assistant_panel, "installed_local_models",
-                        lambda: ["qwen3:32b", "gemma4:12b"])
+    monkeypatch.setattr(assistant_panel, "installed_local_models", lambda: [
+        {"name": "qwen3:32b", "bytes": 20_000_000_000, "parameters": "32.8B",
+         "quantisation": "Q4_K_M"},
+        {"name": "gemma4:12b", "bytes": 8_100_000_000, "parameters": "12B",
+         "quantisation": "Q4_0"},
+    ])
     panel = assistant_panel.AssistantPanel(default_registry())
 
     panel.provider.setCurrentText("Claude")
@@ -267,6 +271,11 @@ def test_the_model_menu_offers_only_models_that_exist(monkeypatch):
     panel.provider.setCurrentText("Local")
     local = [panel.model.itemData(i) for i in range(panel.model.count())]
     assert local == ["qwen3:32b", "gemma4:12b"]
+    # The menu must say what each one costs, not just name it.
+    shown = [panel.model.itemText(i) for i in range(panel.model.count())]
+    assert "20.0 GB" in shown[0] and "8.1 GB" in shown[1]
+    advice = panel.model.itemData(0, QtCore.Qt.ItemDataRole.ToolTipRole)
+    assert advice and "Claude" in advice
 
 
 def test_no_local_model_installed_says_so_rather_than_offering_one(monkeypatch):

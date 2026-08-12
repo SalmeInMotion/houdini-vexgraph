@@ -22,7 +22,9 @@ from PySide6 import QtCore, QtWidgets
 from ..assistant import vram
 # By name, not the module: the assistant package also exports a
 # function called `providers`, which shadows it on import.
-from ..assistant.providers import CLAUDE_MODELS, installed_local_models
+from ..assistant.providers import (CLAUDE_MODELS, describe_local_model,
+                                   installed_local_models,
+                                   local_model_advice)
 from ..graph import Graph
 from ..nodedefs import Registry
 from . import theme
@@ -354,8 +356,14 @@ class AssistantPanel(QtWidgets.QWidget):
                 self.model.addItem(label, name)
             return
         installed = installed_local_models()
-        for name in installed:
-            self.model.addItem(name, name)
+        total = vram.gpu_usage()
+        total_gb = (total.total_mb / 1024) if total else 0.0
+        for model in installed:
+            self.model.addItem(describe_local_model(model), model["name"])
+            self.model.setItemData(
+                self.model.count() - 1,
+                local_model_advice(model, total_gb),
+                QtCore.Qt.ItemDataRole.ToolTipRole)
         if not installed:
             self.model.addItem("No local models found", "")
             self.model.setToolTip(

@@ -33,6 +33,10 @@ GRID_SPACING = 26
 NODE_BODY = _c("#353535")
 NODE_BODY_SELECTED = _c("#3d3d3d")
 NODE_TITLE_TEXT = _c("#d4d4d4")
+# A node whose function Houdini documents. Tinted rather than decorated so it
+# reads as "there is more here" without competing with the error colour, and so
+# double-clicking for the help page is discoverable instead of being a secret.
+NODE_TITLE_DOCUMENTED = _c("#8fc4ef")
 NODE_LABEL_TEXT = _c("#a8a8a8")
 NODE_OUTLINE = _c("#00000000")
 NODE_OUTLINE_SELECTED = _c("#f0a53a")

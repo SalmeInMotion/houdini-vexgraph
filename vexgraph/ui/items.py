@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from .. import help as vexhelp
 from .. import vextypes
 from ..graph import EXEC_PIN, Graph, Node
 from ..nodedefs import NodeDef, ParamDef, SocketDef
@@ -358,6 +359,9 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self._width = theme.NODE_MIN_WIDTH
         self._height = theme.TITLE_HEIGHT
         self.status = ""          # "", "error" or "warning"
+        # Whether double-clicking this node will open a help page. Worked out
+        # once here rather than on every repaint: it reads a zip.
+        self.has_help = vexhelp.page(self.definition.vex_function) is not None
         self.status_text = ""
 
         self.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
@@ -620,7 +624,8 @@ class NodeItem(QtWidgets.QGraphicsItem):
                              else theme.NODE_ERROR)
             painter.drawEllipse(dot, 3.2, 3.2)
 
-        painter.setPen(theme.NODE_TITLE_TEXT)
+        painter.setPen(theme.NODE_TITLE_DOCUMENTED if self.has_help
+                       else theme.NODE_TITLE_TEXT)
         rect = QtCore.QRectF(left, 0,
                              self._width - left - 6,
                              theme.TITLE_HEIGHT)

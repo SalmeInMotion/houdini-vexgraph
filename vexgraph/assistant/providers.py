@@ -40,14 +40,69 @@ CLAUDE_MODELS = (
 
 
 def installed_local_models(url: str = OLLAMA_URL,
-                           timeout: int = 3) -> list[str]:
-    """Model names Ollama already has, so the menu offers only real choices."""
+                           timeout: int = 3) -> list[dict]:
+    """What Ollama has pulled, with the size each one will occupy.
+
+    Read live rather than tabulated here: the figure depends on the exact
+    quantisation pulled, and a number written into this file would be wrong for
+    someone else's machine on the day they read it.
+    """
     try:
         with urllib.request.urlopen(f"{url}/api/tags", timeout=timeout) as response:
             tags = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, OSError, ValueError, TimeoutError):
         return []
-    return sorted(m.get("name", "") for m in tags.get("models", ()) if m.get("name"))
+    out = []
+    for model in tags.get("models", ()):
+        name = model.get("name")
+        if not name:
+            continue
+        details = model.get("details") or {}
+        out.append({
+            "name": name,
+            # Weights on disk. VRAM is this plus the KV cache for the context,
+            # so the real cost is a little higher - close enough to plan by.
+            "bytes": int(model.get("size", 0) or 0),
+            "parameters": details.get("parameter_size", ""),
+            "quantisation": details.get("quantization_level", ""),
+        })
+    return sorted(out, key=lambda m: m["name"])
+
+
+def describe_local_model(model: dict) -> str:
+    """One line for the menu: what it is and what it will cost you."""
+    gigabytes = model["bytes"] / 1e9
+    parts = [model["name"]]
+    if gigabytes:
+        parts.append(f"~{gigabytes:.1f} GB VRAM")
+    if model.get("parameters"):
+        parts.append(model["parameters"])
+    return "  ·  ".join(parts)
+
+
+def local_model_advice(model: dict, total_vram_gb: float = 0.0) -> str:
+    """Whether this model can do the job, said plainly.
+
+    Measured on this project rather than guessed: a 12B model answered in 26 s
+    and wired the wrong attribute; a 32B model did not finish in 25 minutes
+    under schema-constrained decoding. Nothing local has been good enough at
+    choosing from a 1300-node catalogue, and saying so is more useful than a
+    menu that implies the choice matters.
+    """
+    gigabytes = model["bytes"] / 1e9
+    lines = []
+    if total_vram_gb and gigabytes > total_vram_gb * 0.9:
+        lines.append(f"Will not fit in {total_vram_gb:.0f} GB of VRAM and will "
+                     f"spill to system memory, which is very slow.")
+    elif total_vram_gb and gigabytes > total_vram_gb * 0.5:
+        lines.append(f"Takes over half of your {total_vram_gb:.0f} GB - expect "
+                     f"the rest of Houdini to feel it while it is loaded.")
+    lines.append(
+        "Small models (under ~8 GB) are quick but tend to pick a plausible "
+        "wrong node. Larger ones choose better and get slow enough to be "
+        "painful. For building a graph, Claude is the one that works; the "
+        "local option is for when you have no connection.")
+    return " ".join(lines)
 
 
 class ProviderError(RuntimeError):

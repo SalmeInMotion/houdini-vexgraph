@@ -23,6 +23,7 @@ from .browser import NodeBrowser
 from .canvas import GraphScene, GraphView
 from .codeview import CodeView
 from .palette import NodeSearch, search_for_port
+from .snippet_picker import SnippetPicker
 
 EMIT_DELAY_MS = 120
 COMPILE_DELAY_MS = 700
@@ -107,6 +108,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         self._emit_timer.timeout.connect(self._regenerate)
         self._compile_timer = QtCore.QTimer(self, singleShot=True)
         self._compile_timer.timeout.connect(self._compile)
+        self._compile_timer.timeout.connect(self._auto_apply)
 
         self._regenerate()
         QtCore.QTimer.singleShot(0, self.view.frame_all)
@@ -162,10 +164,25 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.import_button.clicked.connect(self.import_vex)
         bar.addWidget(self.import_button)
 
+        self.snippets_button = QtWidgets.QPushButton("Snippets")
+        self.snippets_button.setToolTip(
+            "Ready-made VEX from the tools installed on this machine,\n"
+            "opened as nodes so you can read and change it.")
+        self.snippets_button.clicked.connect(self.open_snippets)
+        bar.addWidget(self.snippets_button)
+
         self.apply_button = QtWidgets.QPushButton("Apply to Wrangle")
         self.apply_button.setToolTip(
             "Write the generated VEX into the wrangle's snippet")
         bar.addWidget(self.apply_button)
+
+        self.auto_apply = QtWidgets.QCheckBox("Live")
+        self.auto_apply.setChecked(True)
+        self.auto_apply.setToolTip(
+            "Write to the wrangle as you edit, so the viewport keeps up.\n"
+            "Debounced, and a graph with errors is never written - the last\n"
+            "working VEX stays until the new one is valid.")
+        bar.addWidget(self.auto_apply)
 
         bar.addSpacing(12)
         bar.addWidget(QtWidgets.QLabel("Run over"))
@@ -345,6 +362,15 @@ class VexGraphEditor(QtWidgets.QWidget):
         if app is not None:
             app.removeEventFilter(self)
         super().closeEvent(event)
+
+    def open_snippets(self) -> None:
+        picker = SnippetPicker(self.registry, self)
+        picker.chosen.connect(self._take_snippet)
+        picker.exec()
+
+    def _take_snippet(self, graph: Graph, description: str) -> None:
+        self.set_graph(graph)
+        self._show_message(description)
 
     def open_help_for(self, node_type: str) -> None:
         """Open Houdini's page for a node, or say why there is not one.
@@ -621,6 +647,23 @@ class VexGraphEditor(QtWidgets.QWidget):
             return
         self.applied.emit(emission.code)
         self._show_message("Applied to the wrangle.")
+
+    def _auto_apply(self) -> None:
+        """Push the VEX to the wrangle as the graph changes.
+
+        Shares the compile timer's debounce, so the wrangle is written once you
+        stop moving rather than on every keystroke - a wrangle recooks the
+        geometry downstream of it, and doing that per character would make the
+        scene crawl.
+
+        A graph with errors is never applied: the last good VEX stays in place
+        rather than the viewport going red halfway through an edit.
+        """
+        if not self.auto_apply.isChecked():
+            return
+        emission = generate(self.graph)
+        if emission.ok:
+            self.applied.emit(emission.code)
 
 
 def _ask_for_vex(parent) -> tuple[str, bool]:

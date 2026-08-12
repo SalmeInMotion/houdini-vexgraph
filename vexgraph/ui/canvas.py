@@ -355,9 +355,29 @@ class GraphScene(QtWidgets.QGraphicsScene):
         # assistant's Ask button, typically) keeps eating every keystroke and
         # typing into the row silently does nothing.
         views = self.views()
-        if views:
-            views[0].setFocus(QtCore.Qt.FocusReason.OtherFocusReason)
-        line.setFocus(QtCore.Qt.FocusReason.OtherFocusReason)
+        view = views[0] if views else None
+
+        def take_focus() -> None:
+            # Deferred to the next event-loop turn. Inside Houdini the first
+            # click on an inactive pane is spent activating it, and Houdini
+            # moves focus itself as part of that - after this function would
+            # otherwise have run. Setting focus now *and* again once that has
+            # settled is what makes the first click enough to type, instead of
+            # needing a second one.
+            if self._editor is not proxy:
+                return                      # the editor closed in the meantime
+            window = line.window()
+            if window is not None:
+                window.activateWindow()
+            if view is not None:
+                view.setFocus(QtCore.Qt.FocusReason.MouseFocusReason)
+            line.setFocus(QtCore.Qt.FocusReason.MouseFocusReason)
+            line.selectAll()
+
+        if view is not None:
+            view.setFocus(QtCore.Qt.FocusReason.MouseFocusReason)
+        line.setFocus(QtCore.Qt.FocusReason.MouseFocusReason)
+        QtCore.QTimer.singleShot(0, take_focus)
 
     @property
     def is_editing(self) -> bool:

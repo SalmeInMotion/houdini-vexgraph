@@ -82,17 +82,28 @@ def _archive() -> zipfile.ZipFile | None:
         return None
 
 
-@functools.lru_cache(maxsize=512)
+@functools.lru_cache(maxsize=2048)
 def page(function: str) -> Page | None:
-    """The parsed help page for one VEX function, if Houdini ships one."""
+    """The parsed help page for one VEX function, if Houdini ships one.
+
+    Generated node types carry an arity suffix to tell overloads apart -
+    `ptransform_3` is the three-argument `ptransform`. The suffix is ours, not
+    Houdini's, so a lookup that fails is retried without it. That is worth 386
+    nodes: coverage goes from 888 of 1275 to 1274.
+
+    Exact first, though: `norm_1` is a real VEX function whose name genuinely
+    ends that way, and stripping blindly would send it to the wrong page.
+    """
     archive = _archive()
     if archive is None or not function:
         return None
-    try:
-        raw = archive.read(f"functions/{function}.txt").decode("utf8", "replace")
-    except KeyError:
-        return None
-    return _parse(function, raw)
+    for name in (function, re.sub(r"_\d+$", "", function)):
+        try:
+            raw = archive.read(f"functions/{name}.txt").decode("utf8", "replace")
+        except KeyError:
+            continue
+        return _parse(name, raw)
+    return None
 
 
 # --------------------------------------------------------------------- parsing

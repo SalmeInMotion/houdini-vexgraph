@@ -900,3 +900,49 @@ def test_the_library_drag_carries_the_node_type(app, registry):
     data = tree.mimeData([chosen])
     assert data.hasFormat(NODE_MIME), "the drag carried nothing the canvas reads"
     assert bytes(data.data(NODE_MIME)).decode() == "fit_range"
+
+
+def test_documented_nodes_are_marked_on_the_canvas(app, registry):
+    """Double-click opens help; the colour is what makes that discoverable."""
+    graph = Graph(registry)
+    scene = GraphScene(graph)
+    documented = scene.add_node("fit_range", QtCore.QPointF(0, 0))
+    plain = scene.add_node("not_true", QtCore.QPointF(300, 0))
+
+    assert documented.has_help, "fit() is documented"
+    assert not plain.has_help, "Not is an operator, with no page"
+    assert theme.NODE_TITLE_DOCUMENTED != theme.NODE_TITLE_TEXT
+
+
+def test_live_apply_writes_only_a_graph_that_works(editor):
+    """A half-finished edit must not push broken VEX at the viewport."""
+    applied = []
+    editor.applied.connect(applied.append)
+    editor.auto_apply.setChecked(True)
+
+    item = editor.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
+    item.node.params["value"] = "{1, 0, 0}"
+    editor.scene.connect_ports(
+        editor.scene.node_items["start"].ports[("exec", False)],
+        item.ports[("exec", True)])
+    editor._auto_apply()
+    assert applied, "a valid graph should have been written"
+    good = len(applied)
+
+    item.node.params.pop("value", None)          # now it is incomplete
+    editor._auto_apply()
+    assert len(applied) == good, "a graph with errors was written to the wrangle"
+
+
+def test_live_apply_can_be_turned_off(editor):
+    applied = []
+    editor.applied.connect(applied.append)
+    editor.auto_apply.setChecked(False)
+
+    item = editor.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
+    item.node.params["value"] = "{1, 0, 0}"
+    editor.scene.connect_ports(
+        editor.scene.node_items["start"].ports[("exec", False)],
+        item.ports[("exec", True)])
+    editor._auto_apply()
+    assert not applied

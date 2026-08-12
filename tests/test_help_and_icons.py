@@ -227,3 +227,25 @@ def test_houdinis_name_for_a_function_finds_our_node(registry):
         assert top and top[0].label == expected, (
             f"searching {query!r} gave {top[0].label if top else None!r}, "
             f"not {expected!r}")
+
+
+@needs_help
+def test_an_overload_suffix_still_finds_the_function_page(registry):
+    """`ptransform_3` is our name for an overload; Houdini's page is ptransform.
+
+    Not stripping it cost 386 nodes their documentation.
+    """
+    page = vexhelp.page("ptransform_3")
+    assert page is not None
+    assert page.name == "ptransform", "the label should name the real function"
+
+    tier2 = [d for d in registry if d.tier == 2]
+    covered = sum(1 for d in tier2 if vexhelp.page(d.vex_function))
+    assert covered > len(tier2) * 0.98, f"only {covered}/{len(tier2)} had help"
+
+
+@needs_help
+def test_a_function_whose_name_really_ends_in_digits_is_not_stripped():
+    """`norm_1` exists; stripping blindly would send it to the wrong page."""
+    page = vexhelp.page("norm_1")
+    assert page is not None and page.name == "norm_1"
