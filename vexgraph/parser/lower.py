@@ -263,6 +263,13 @@ class Importer:
         # does declare its variable, so materialising one would duplicate it.
         self._value_aliases: dict[str, tuple[str, str]] = {}
         self._counter = 0
+        # Where the next node in run order attaches: (node id, exec pin). Kept
+        # current while a statement lowers so that a call with side effects
+        # found *inside an expression* - `pr = addprim(0, "polyline")` - can be
+        # spliced into the sequence at the point it occurs. Those nodes used to
+        # be created and never wired to run, which emitted references to
+        # results that were never computed.
+        self._cursor: tuple[str, str] = ("", "")
 
     # ------------------------------------------------------------- driving
 
@@ -290,23 +297,87 @@ class Importer:
 
     def _chain(self, previous: str, statements: list[Statement],
                pin: str = "exec") -> str:
-        """Lower a run of statements, wiring each into the exec chain."""
+        """Lower a run of statements, wiring each into the exec chain.
+
+        The cursor, not `previous`, is what statements attach to: lowering one
+        statement can splice side-effect nodes into the sequence (a call in an
+        expression), and the statement's own node has to land after them.
+        """
         for statement in statements:
             self.report.total += 1
             mark = len(self.graph.nodes)
+            self._cursor = (previous, pin)
             try:
                 node_ids = [self._statement(statement)]
             except Unsupported as exc:
                 self._rollback(mark)
+                self._cursor = (previous, pin)   # spliced nodes are gone too
                 # An inlined statement may need declarations put back first,
                 # so this is a run of nodes rather than one.
-                node_ids = self._inline(statement, str(exc))
+                node_ids = (self._inline_declaration(statement, str(exc))
+                            or self._inline(statement, str(exc)))
             for node_id in node_ids:
                 if not node_id:
                     continue
-                self.graph.connect(previous, pin, node_id, "exec", is_exec=True)
-                previous, pin = node_id, "exec"
+                at, at_pin = self._cursor
+                self.graph.connect(at, at_pin, node_id, "exec", is_exec=True)
+                self._cursor = (node_id, "exec")
+            previous, pin = self._cursor
         return previous
+
+    def _chain_body(self, previous: str, statements: list[Statement],
+                    pin: str) -> str:
+        """Lower a body without disturbing where its OWNER attaches.
+
+        A branch or loop node is wired into the outer sequence *after* its
+        bodies are lowered, and the inner chain moves the cursor as it works -
+        so without saving it, the loop node would be attached after the last
+        statement of its own body, turning the sequence inside out.
+        """
+        saved = self._cursor
+        tail = self._chain(previous, statements, pin=pin)
+        self._cursor = saved
+        return tail
+
+    def _inline_declaration(self, statement: Statement,
+                            reason: str) -> list[str] | None:
+        """An unsupported initialiser becomes a real variable plus inline text.
+
+        `int flag = a ? b : c;` used to go verbatim into one inline node, and
+        because the graph then had no record of `flag`, every later mention of
+        it fell to inline too - one cause, a cascade of symptoms. Splitting it
+        keeps both sides honest: a Make Variable node declares the name, so the
+        emitter and later statements know it, and the inline node holds only
+        the assignment the graph could not express.
+
+        None when the statement is not a splittable declaration, in which case
+        the ordinary verbatim path takes over.
+        """
+        if not isinstance(statement, Declare) or not statement.name:
+            return None
+        text = self.source[statement.start:statement.end].strip()
+        opener = re.match(
+            rf"^\s*{re.escape(statement.type)}\s+{re.escape(statement.name)}"
+            rf"\s*(\[\s*\])?\s*=",
+            text)
+        if opener is None:
+            return None
+
+        vex_type = statement.type + ("[]" if statement.is_array else "")
+        self.variables[statement.name] = vex_type
+        maker = self.graph.add("var_make", self._name("make"),
+                               name=statement.name, type=vex_type)
+        self._declared_by[statement.name] = maker.id
+
+        assignment = f"{statement.name} ={text[opener.end():]}".strip()
+        if not assignment.endswith((";", "}")):
+            assignment += ";"
+        self.report.inlined += 1
+        self.report.reasons.append(reason)
+        nodes = self._materialise_aliases(assignment)
+        nodes.append(self.graph.add("inline_vex", self._name("inline"),
+                                    code=assignment).id)
+        return [maker.id, *nodes]
 
     def _rollback(self, mark: int) -> None:
         """Drop the half-built nodes of a statement that turned out unsupported."""
@@ -401,7 +472,12 @@ class Importer:
         # `float d = xyzdist(...)` is one node in a graph, not a call plus a
         # variable: the name is just how the code refers to that output. Only
         # a variable that is written again later needs to be a real variable.
-        if value.is_port and not self._reassigned.get(statement.name):
+        # And only when the wire IS the declared type: aliasing `int n` to a
+        # float wire records a claim the emitter cannot honour, and surfaces
+        # later as a mismatch on whatever the alias gets materialised into.
+        # Without the alias, the var_make path below converts properly.
+        if (value.is_port and value.type == vex_type
+                and not self._reassigned.get(statement.name)):
             self._loop_indices[statement.name] = (value.node, value.socket)
             self._value_aliases[statement.name] = (value.node, value.socket)
             return ""
@@ -488,7 +564,8 @@ class Importer:
                                     len(statement.value.args))
         if signature is None:
             raise Unsupported(f"no node calls {statement.value.name}()")
-        placed = self._place_call(signature, statement.value).node
+        placed = self._place_call(signature, statement.value,
+                                  chained_by_caller=True).node
         # A call written as a statement may still land on a pure value node -
         # `rotate(m, ...)` becomes "the rotated matrix". Those have no exec pin,
         # so returning them here would try to wire them into the run order.
@@ -501,9 +578,9 @@ class Importer:
         node_type = "if_else" if statement.otherwise else "if"
         node = self.graph.add(node_type, self._name("branch"))
         self._feed(node.id, "condition", self._expression(statement.condition))
-        self._chain(node.id, statement.then, pin="then")
+        self._chain_body(node.id, statement.then, pin="then")
         if statement.otherwise:
-            self._chain(node.id, statement.otherwise, pin="otherwise")
+            self._chain_body(node.id, statement.otherwise, pin="otherwise")
         return node.id
 
     def _for(self, statement: For) -> str:
@@ -513,10 +590,15 @@ class Importer:
                 "only counted loops (for i = 0; i < n; i++) map")
         variable, limit = count
         node = self.graph.add("for_range", self._name("repeat"))
+        # The emitter names the loop variable from the node's title. Keeping
+        # the original name is not cosmetic: an inline statement in the body
+        # still says `i`, and a loop emitted as `repeat` leaves that text
+        # referring to a variable that no longer exists.
+        node.title = variable
         self._feed(node.id, "count", self._expression(limit))
         self.variables[variable] = "int"
         self._loop_indices[variable] = (node.id, "index")
-        self._chain(node.id, statement.body, pin="body")
+        self._chain_body(node.id, statement.body, pin="body")
         return node.id
 
     @staticmethod
@@ -562,13 +644,17 @@ class Importer:
     def _foreach(self, statement: ForEach) -> str:
         element = statement.value_type or self._element_type(statement.array)
         node = self.graph.add("foreach", self._name("each"), type=element)
+        # No title trick here, unlike _for: a title is one hint serving this
+        # node's TWO outputs (index and item), so naming it after the value
+        # variable collides the two and renames both. The sockets' own titles
+        # already carry sensible names.
         self._feed(node.id, "items", self._expression(statement.array))
         if statement.index_name:
             self.variables[statement.index_name] = "int"
             self._loop_indices[statement.index_name] = (node.id, "index")
         self.variables[statement.value_name] = element
         self._loop_indices[statement.value_name] = (node.id, "item")
-        self._chain(node.id, statement.body, pin="body")
+        self._chain_body(node.id, statement.body, pin="body")
         return node.id
 
     def _element_type(self, array: Expr) -> str:
@@ -578,10 +664,46 @@ class Importer:
     # ---------------------------------------------------------- expressions
 
     def _feed(self, node_id: str, socket: str, value: Value) -> None:
-        if value.is_port:
-            self.graph.connect(value.node, value.socket, node_id, socket)
-        else:
+        """Wire a value into a socket, converting the way VEX itself would.
+
+        The graph is stricter than VEX on purpose - a person wiring by hand
+        should say whether a float rounds or truncates. But imported code
+        already made that decision when it compiled, so refusing here turned
+        working snippets into graphs whose emitted VEX no longer built. The
+        conversion VEX applied implicitly is inserted as a visible node
+        instead: same meaning, and the graph now *shows* the coercion the
+        original code hid.
+        """
+        if not value.is_port:
             self.graph.nodes[node_id].params[socket] = value.literal
+            return
+
+        try:
+            wanted = self.graph.socket_type(node_id, socket, is_input=True)
+        except Exception:               # noqa: BLE001 - unresolved; keep old path
+            wanted = ""
+        if wanted and not vextypes.can_connect(value.type, wanted):
+            # Cheapest first: if the source is polymorphic, its type was our
+            # guess, and the socket is the evidence of what the author meant.
+            if not self._retype_to(value, wanted):
+                if value.type == "float" and wanted == "int":
+                    value = self._truncate(value)
+                else:
+                    raise Unsupported(
+                        vextypes.explain_mismatch(value.type, wanted)
+                        or f"a {value.type} cannot feed a {wanted} input")
+        self.graph.connect(value.node, value.socket, node_id, socket)
+
+    def _truncate(self, value: Value) -> Value:
+        """A visible float->int conversion, in the direction VEX itself goes.
+
+        Implicit float->int in VEX truncates, so the shim says `trunc` rather
+        than round - importing must not change what the code computes, only
+        make it visible.
+        """
+        shim = self.graph.add("round_to_int", self._name("whole"), mode="trunc")
+        self.graph.connect(value.node, value.socket, shim.id, "value")
+        return Value(node=shim.id, socket="result", type="int")
 
     def _expression(self, expr: Expr) -> Value:
         if isinstance(expr, Literal):
@@ -605,6 +727,14 @@ class Importer:
             raise Unsupported("only 3-component vectors can be built from parts")
 
         if isinstance(expr, Attribute):
+            # `@OpInput1` is not an attribute: it is the wrangle's spelling of
+            # "my first input". The functions it is passed to also take the
+            # input *number*, which is what it becomes here - same compiled
+            # meaning, and it saves modelling a string binding that only ever
+            # names an input.
+            opinput = re.fullmatch(r"OpInput([1-4])", expr.name)
+            if opinput and not expr.prefix:
+                return Value(literal=str(int(opinput.group(1)) - 1), type="int")
             vex_type = self._attribute_type(expr)
             node = self.graph.add("attrib_get", self._name("get"),
                                   attrib=expr.name, type=vex_type)
@@ -633,10 +763,22 @@ class Importer:
             return Value(node=node.id, socket="value", type=vex_type)
 
         if isinstance(expr, Cast):
-            # The emitter re-inserts whatever coercion the types require, so a
-            # cast that only restates a type is dropped rather than modelled.
+            # A cast that only restates a type is dropped rather than modelled.
+            # One that actually changes the type has to change the graph too:
+            # claiming the new type on an unchanged wire lied to the connection
+            # checks, and the lie surfaced later as an emitter refusal on a
+            # graph already built.
             inner = self._expression(expr.value)
-            return Value(inner.literal, inner.node, inner.socket, expr.to)
+            if not inner.is_port or inner.type == expr.to:
+                return Value(inner.literal, inner.node, inner.socket, expr.to)
+            if self._retype_to(inner, expr.to):
+                return inner
+            if inner.type == "float" and expr.to == "int":
+                return self._truncate(inner)      # what a C cast does anyway
+            if vextypes.can_connect(inner.type, expr.to):
+                return Value(inner.literal, inner.node, inner.socket, expr.to)
+            raise Unsupported(f"a ({expr.to}) cast from {inner.type} "
+                              f"has no node to do the converting")
 
         if isinstance(expr, Unary):
             if expr.op == "-" and isinstance(expr.operand, Literal):
@@ -711,7 +853,8 @@ class Importer:
                      type=output.type if output.type != vextypes.ANY
                      else result_type)
 
-    def _place_call(self, signature, expr: Call) -> Value:
+    def _place_call(self, signature, expr: Call, *,
+                    chained_by_caller: bool = False) -> Value:
         definition = self.registry.require(signature.node_type)
         node = self.graph.add(signature.node_type,
                               self._name(signature.node_type.replace("vex_", "")))
@@ -749,6 +892,16 @@ class Importer:
                     self._feed(node.id, socket.reads, self._expression(argument))
                 self._alias(argument.name, node.id, slot.name)
 
+        # A call with side effects found inside an expression still has to
+        # *run*. Its arguments were fed above - any exec nodes among them are
+        # already spliced, in argument order - so this node goes after them and
+        # before the statement that consumes its result.
+        if definition.has_exec and not chained_by_caller:
+            at, at_pin = self._cursor
+            if at:
+                self.graph.connect(at, at_pin, node.id, "exec", is_exec=True)
+                self._cursor = (node.id, "exec")
+
         if not signature.result:
             return Value(node=node.id, socket="", type="")
         output = definition.output(signature.result)
@@ -760,19 +913,78 @@ class Importer:
         if isinstance(argument, Literal):
             text = argument.text
             return text[1:-1] if kind == "param_str" and text.startswith('"') else text
+        if isinstance(argument, Attribute) and not argument.prefix:
+            opinput = re.fullmatch(r"OpInput([1-4])", argument.name)
+            if opinput:               # the input number, as a constant setting
+                return str(int(opinput.group(1)) - 1)
         raise Unsupported("a setting on this node must be a constant here")
 
-    def _retype_to(self, value: Value, wanted: str) -> None:
-        """Switch a polymorphic node's Type setting so its output is `wanted`."""
-        node = self.graph.nodes.get(value.node)
+    def _retype_to(self, value: Value, wanted: str) -> bool:
+        """Switch a polymorphic node's Type setting so its output is `wanted`.
+
+        Recursive, because the evidence propagates: `float d = point(...) /
+        point(...)` types the division float, and the division's operands are
+        then evidence about the two reads feeding it - which is exactly how
+        vcc resolved the original code. All or nothing: a chain that cannot be
+        retyped end to end is put back the way it was found.
+        """
+        touched: list[tuple[str, str | None]] = []
+        if self._retype_node(value.node, value.socket, wanted, touched):
+            value.type = wanted
+            return True
+        for node_id, old in reversed(touched):
+            params = self.graph.nodes[node_id].params
+            if old is None:
+                params.pop("type", None)
+            else:
+                params["type"] = old
+        return False
+
+    def _retype_node(self, node_id: str, socket: str, wanted: str,
+                     touched: list[tuple[str, str | None]]) -> bool:
+        node = self.graph.nodes.get(node_id)
         if node is None:
-            return
-        setting = self.registry.require(node.type).param("type")
-        if (setting is None or value.socket not in setting.retypes
+            return False
+        definition = self.registry.require(node.type)
+        if self.graph.socket_type(node_id, socket, is_input=False) == wanted:
+            return True
+        setting = definition.param("type")
+        if (setting is None or socket not in setting.retypes
                 or wanted not in setting.menu):
-            return
+            return False
+        # Some types are not ours to change. A declared variable's reads mean
+        # what its declaration said, and `@P` is a vector whatever a socket
+        # downstream might prefer - retyping either one would silently change
+        # what the code computes, which is exactly the wrongness this tool
+        # exists to prevent. A custom attribute with no prefix is fair game:
+        # its type was our guess in the first place, and the socket is better
+        # evidence than the guess (it is how vcc resolved the original).
+        if node.type.startswith("var_"):
+            return False
+        attrib = node.params.get("attrib", "")
+        if attrib in STANDARD_ATTRIBUTES and STANDARD_ATTRIBUTES[attrib] != wanted:
+            return False
+        touched.append((node_id, node.params.get("type")))
         node.params["type"] = wanted
-        value.type = wanted
+
+        # Inputs governed by the same setting changed type with it; whatever
+        # feeds them has to still fit, retyped in turn if need be.
+        for sock in definition.inputs:
+            if sock.name not in setting.retypes:
+                continue
+            link = next((x for x in self.graph.links
+                         if not x.is_exec and x.to_node == node_id
+                         and x.to_socket == sock.name), None)
+            if link is None:
+                continue          # a literal or a default adapts on its own
+            source = self.graph.socket_type(link.from_node, link.from_socket,
+                                            is_input=False)
+            if vextypes.can_connect(source, wanted):
+                continue
+            if not self._retype_node(link.from_node, link.from_socket,
+                                     wanted, touched):
+                return False
+        return True
 
     def _alias(self, name: str, node_id: str, socket: str) -> None:
         """Point a variable name at a node's output instead of a variable."""

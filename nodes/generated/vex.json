@@ -23440,15 +23440,16 @@
     "ptcloud",
     "file"
    ],
-   "inputs": [],
-   "outputs": [
+   "inputs": [
     {
      "name": "handle",
      "type": "int",
-     "label": "Handle"
+     "label": "Handle",
+     "default": "0"
     }
    ],
-   "code": "int {handle} = 0;\npcclose({handle});"
+   "outputs": [],
+   "code": "pcclose({handle});"
   },
   {
    "type": "vex_pccone",

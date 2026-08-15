@@ -120,7 +120,10 @@
             "vector2",
             "vector4",
             "string",
-            "matrix"
+            "matrix2",
+            "matrix3",
+            "matrix",
+            "dict"
           ],
           "retypes": [
             "items",
@@ -429,7 +432,10 @@
             "vector2",
             "vector4",
             "string",
-            "matrix"
+            "matrix2",
+            "matrix3",
+            "matrix",
+            "dict"
           ],
           "retypes": [
             "value"
@@ -481,7 +487,10 @@
             "vector2",
             "vector4",
             "string",
-            "matrix"
+            "matrix2",
+            "matrix3",
+            "matrix",
+            "dict"
           ],
           "retypes": [
             "value"

@@ -213,6 +213,131 @@ def test_splitting_declarations_does_not_split_call_arguments(registry):
     assert report.total == 2 and report.inlined == 0, report.reasons
 
 
+def test_a_side_effect_call_inside_an_expression_still_runs(registry):
+    """`pr = addprim(0, "polyline")` must put addprim in the run order.
+
+    The node used to be created to feed the assignment and never wired to
+    execute, so the emitted code referenced a result that was never computed -
+    a graph that looked right and did not compile. The worst failure this
+    tool can produce, because its whole promise is that what you see builds.
+    """
+    code, report = imported(
+        'int pr;\npr = addprim(0, "polyline");\n'
+        'int pt = addpoint(0, @P);\naddvertex(0, pr, pt);', registry)
+    assert report.inlined == 0, report.reasons
+    # The calls appear, and before their results are used.
+    assert code.index("addprim(") < code.index("addvertex(")
+    assert code.index("addpoint(") < code.index("addvertex(")
+
+
+def test_declared_type_flows_back_through_operator_chains(registry):
+    """`float d = point(a)/point(b)` types the reads float, as vcc did.
+
+    The reads defaulted to vector, the division inherited it, and the declared
+    type only retyped the last node - leaving vector wires into float sockets
+    and an emission that failed. The declaration is evidence about the whole
+    chain, so the retype now follows the wires down.
+    """
+    code, report = imported(
+        'float decay = point(0, "life", @ptnum) / point(0, "age", @ptnum);\n'
+        "@pscale = decay;", registry)
+    assert report.inlined == 0, report.reasons
+    assert "vector" not in code
+
+
+def test_a_float_feeding_an_int_socket_gets_a_visible_truncate(registry):
+    """VEX truncates on implicit float->int; the graph now shows that."""
+    code, report = imported(
+        'float budget = ch("count");\n'
+        "int pts[] = nearpoints(0, @P, 1.0, budget);\n"
+        "i@found = len(pts);", registry)
+    assert report.inlined == 0, report.reasons
+    assert "trunc" in code, "the coercion should be spelled out, not refused"
+
+
+def test_a_wire_that_cannot_convert_falls_inline_not_broken(registry):
+    """A statement the types cannot serve becomes Inline VEX and compiles.
+
+    Refusing at emission time - after the graph was built - broke the whole
+    round trip. Failing while lowering keeps the statement verbatim, which is
+    the never-fatal promise the importer makes everywhere else.
+    """
+    report = import_vex('string s = "x";\n'
+                        "int pts[] = nearpoints(0, @P, 1.0, s);", registry)
+    assert report.inlined >= 1
+    emission = generate(report.graph)
+    errors = [str(i) for i in emission.issues if i.severity == ERROR]
+    assert not errors, "\n".join(errors)
+
+
+def test_opinput_bindings_become_input_numbers(registry):
+    """`@OpInput1` is the wrangle's name for input 0, not an attribute."""
+    code, report = imported(
+        'int h = pcopen(@OpInput1, "P", @P, 1.0, 10);\ni@n = pcnumfound(h);',
+        registry)
+    assert report.inlined == 0, report.reasons
+    assert "pcopen(0," in code.replace(" ", "")
+    assert "OpInput" not in code
+
+
+def test_do_while_is_kept_whole(registry):
+    """`do { } while (c);` is one statement; splitting it broke both halves."""
+    report = import_vex("do { @P.y += 1; } while (@P.y < 3);", registry)
+    assert report.inlined == 1
+    emission = generate(report.graph)
+    assert "while (@P.y < 3);" in emission.code
+
+
+def test_a_declaration_kept_inline_still_declares_its_name(registry):
+    """One unsupported initialiser must not poison every later mention."""
+    code, report = imported(
+        "int flag = @P.y > 0 ? 1 : 0;\n@Cd = set(flag, 0, 0);", registry)
+    # The ternary line stays verbatim; the set() line still becomes nodes.
+    assert report.inlined == 1, report.reasons
+    assert "? 1 : 0" in code
+    assert "set(" in code
+
+
+def test_a_c_cast_changes_the_graph_not_just_the_label(registry):
+    """`(int)rint(x)` used to claim int on a float wire and break later."""
+    code, report = imported(
+        "if ((int)rint(@P.y) == 0) { @Cd = {1, 0, 0}; }", registry)
+    assert report.inlined == 0, report.reasons
+    assert "trunc" in code, "the cast becomes a visible conversion"
+
+
+def test_pcclose_takes_its_handle_instead_of_inventing_one(registry):
+    """The generator misread pcclose(int handle) as writing through it.
+
+    That rebound the caller's variable to a fake output initialised to zero,
+    orphaning the pcopen it came from - `pcclose(0)` on a handle nobody
+    opened, and an undefined variable everywhere the real one was mentioned.
+    """
+    code, report = imported(
+        'int h = pcopen(0, "P", @P, 1.0, 10);\n'
+        "while (pciterate(h)) { @Cd.x = 1; }\n"
+        "pcclose(h);", registry)
+    assert report.inlined == 1          # the while, and only the while
+    assert "pcclose(0)" not in code.replace(" ", "")
+    assert "int h = " in code, "the alias is materialised for the inline text"
+
+
+def test_a_loop_keeps_the_variable_name_the_body_text_uses(registry):
+    """Inline VEX inside the body still says `i`; the loop must too."""
+    code, report = imported(
+        "for (int i = 0; i < 3; i++) {\n"
+        "    while (i > 99) { @P.x = 0; }\n"
+        "}", registry)
+    assert report.inlined == 1          # the while
+    assert "for (int i = 0" in code
+
+
+def test_matrix3_attributes_survive_the_round_trip(registry):
+    code, report = imported("3@inertia = matrix3(1);", registry)
+    assert report.inlined == 0, report.reasons
+    assert "3@inertia" in code
+
+
 # ------------------------------------------------------------ escape hatch
 
 def test_a_while_loop_becomes_one_inline_node(registry):

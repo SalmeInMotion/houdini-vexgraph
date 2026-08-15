@@ -467,6 +467,14 @@ class Parser:
                 depth -= 1
                 self.advance()
                 if depth <= 0:
+                    # `do { ... } while (cond);` is one statement whose tail
+                    # comes *after* the closing brace. Stopping at the brace
+                    # split it in two: a `do` block with no while - which does
+                    # not compile - and a stray while-loop statement.
+                    if self.current.is_(Kind.KEYWORD, "while"):
+                        while (self.current.kind is not Kind.END
+                               and not self.current.is_(Kind.PUNCT, ";")):
+                            self.advance()
                     # `struct x { ... };` ends with a semicolon that belongs to
                     # the declaration, not to an empty statement after it.
                     self.accept(Kind.PUNCT, ";")
