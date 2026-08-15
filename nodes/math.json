@@ -562,13 +562,13 @@
           "label": "Z"
         }
       ],
-      "code": "float {x} = {vector}.x;\nfloat {y} = {vector}.y;\nfloat {z} = {vector}.z;",
       "tags": [
         "unpack",
         "components",
         "xyz",
         "separate"
-      ]
+      ],
+      "builtin": "split_vector"
     },
     {
       "type": "fit_range",

@@ -453,6 +453,14 @@ class Importer:
             node_id, socket = self._value_aliases.pop(name)
             if node_id not in self.graph.nodes:
                 continue
+            # A Make Variable for this name may still be alive - an aliased
+            # in-place edit (rotate(xform, ...)) leaves the original maker in
+            # the chain when something read it. Declaring the name a second
+            # time is exactly the "there is already a variable" refusal.
+            if any(n.type in ("var_make", "var_declare")
+                   and n.params.get("name") == name
+                   for n in self.graph.nodes.values()):
+                continue
             vex_type = self.variables.get(name) or self.graph.socket_type(
                 node_id, socket, is_input=False)
             maker = self.graph.add("var_make", self._name("make"),
@@ -563,18 +571,29 @@ class Importer:
         raise Unsupported("only attributes and variables can be assigned")
 
     def _assign_component(self, target: Member, value: Expr) -> str:
-        """`@P.x = v` as nodes: read the vector, rebuild it, write it back.
+        """`@P.x = v` in one node for attributes; rebuilt for variables.
 
-        There is no "poke one component" node and there should not be - a graph
-        edge carries a value, not a reference into one. Splitting and remaking
-        says the same thing with nodes that already exist, and emits
-        `@P = set(v, @P.y, @P.z)`, which is what it means.
+        Attributes get the direct form because the wrangle language has one -
+        `@P.y = v;` is a legal, idiomatic statement - and the split/remake
+        spelling of it was the single biggest reason simple one-liners
+        exploded into big graphs. Variables keep the split-and-remake, which
+        reads as what it is: a new value built from the old one.
         """
         if target.name not in ("x", "y", "z"):
             raise Unsupported(f".{target.name} cannot be assigned")
         if not isinstance(target.target, (Attribute, Name)):
             raise Unsupported("only an attribute or a variable can be rebuilt "
                               "component by component")
+
+        if isinstance(target.target, Attribute):
+            vex_type = self._attribute_type(target.target)
+            if vex_type in vextypes.VECTOR_TYPES:
+                node = self.graph.add("attrib_set_component", self._name("set"),
+                                      attrib=target.target.name,
+                                      component=target.name, type=vex_type)
+                self._feed(node.id, "value", self._expression(value))
+                self._invalidate_reads("attr", target.target.name)
+                return node.id
 
         current = self._expression(target.target)
         split = self.graph.add("split_vector", self._name("split"))
@@ -1320,8 +1339,16 @@ def _reassigned_names(statements: list[Statement]) -> dict[str, bool]:
 
     def walk(items: list[Statement]) -> None:
         for item in items:
-            if isinstance(item, Assign) and isinstance(item.target, Name):
-                found[item.target.name] = True
+            if isinstance(item, Assign):
+                if isinstance(item.target, Name):
+                    found[item.target.name] = True
+                # `pos.z += x` writes pos just as surely as `pos = x` does.
+                # Not counting it left pos aliased to the node that made it,
+                # and the component write then set a variable that was never
+                # declared.
+                elif (isinstance(item.target, Member)
+                        and isinstance(item.target.target, Name)):
+                    found[item.target.target.name] = True
             for attribute in ("body", "then", "otherwise"):
                 nested = getattr(item, attribute, None)
                 if isinstance(nested, list):

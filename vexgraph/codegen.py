@@ -499,6 +499,12 @@ class Emitter:
                     self.graph.param_value(node, "attrib"),
                     self.graph.param_value(node, "type"))
                 return self.var_of[key]
+            if builtin == "split_vector":
+                # `@P.y`, not three float declarations of which two go unused.
+                # Not cached in var_of: the source expression may differ by
+                # emission position, so it is composed fresh at each use.
+                source = self._input_expression(node, "vector", context=ATOM)
+                return f"{source}.{socket_name}"
             definition = self.graph.definition(node)
             socket = definition.output(socket_name)
             # Prefer what the user renamed the node to; it is the most likely
@@ -671,12 +677,25 @@ class Emitter:
     def _builtin_attrib_get(self, node: Node, definition: NodeDef) -> list[Line]:
         return []   # An attribute read is an expression; see _name_for.
 
+    def _builtin_split_vector(self, node: Node, definition: NodeDef) -> list[Line]:
+        return []   # A component read is an expression; see _name_for.
+
     def _builtin_attrib_set(self, node: Node, definition: NodeDef) -> list[Line]:
         name = self.graph.param_value(node, "attrib")
         vex_type = self.graph.param_value(node, "type")
         value = self._input_expression(node, "value")
         return [Line(f"{vextypes.attribute_reference(name, vex_type)} = {value};",
                      node.id)]
+
+    def _builtin_attrib_set_component(self, node: Node,
+                                      definition: NodeDef) -> list[Line]:
+        """`@P.y = value;` - one line, exactly as a wrangle writer types it."""
+        name = self.graph.param_value(node, "attrib")
+        vex_type = self.graph.param_value(node, "type")
+        component = self.graph.param_value(node, "component")
+        value = self._input_expression(node, "value")
+        binding = vextypes.attribute_reference(name, vex_type)
+        return [Line(f"{binding}.{component} = {value};", node.id)]
 
     def _builtin_var_declare(self, node: Node, definition: NodeDef) -> list[Line]:
         label = self.graph.param_value(node, "name")

@@ -482,11 +482,28 @@ def test_single_quoted_strings_are_read(registry):
 
 
 def test_a_component_can_be_assigned(registry):
-    """`@P.x = v` reads the vector, rebuilds it and writes it back."""
+    """`@P.x = v` is one node and one line, exactly as a wrangle spells it.
+
+    It used to read the vector, split it, rebuild it and write it back -
+    five nodes and four lines for the single most common statement in
+    hand-written VEX, and the biggest reason one-liners became big graphs.
+    """
     code, report = imported("@P.x = 1.5;", registry)
     assert report.inlined == 0
-    assert "@P = set(1.5," in code
+    assert "@P.x = 1.5;" in code
     assert compile_check(generate(report.graph)).ok
+
+
+def test_component_reads_emit_inline_not_as_declarations(registry):
+    """`@P.y` in an expression stays `@P.y`, not three float declarations."""
+    code, report = imported("@P.y += 1;", registry)
+    assert report.inlined == 0
+    assert "@P.y = @P.y + 1;" in code
+    assert "float " not in code, "no unused component declarations"
+
+    # A compound source needs its brackets to keep meaning the same thing.
+    code, _ = imported("f@m = (@P + @N).x;", registry)
+    assert "(@P + @N).x" in code
 
 
 def test_sop_globals_are_not_undeclared_variables(registry):

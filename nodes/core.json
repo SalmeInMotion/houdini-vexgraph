@@ -590,6 +590,62 @@
       ]
     },
     {
+      "type": "attrib_set_component",
+      "category": "Attributes",
+      "label": "Set Attribute Component",
+      "kind": "statement",
+      "builtin": "attrib_set_component",
+      "summary": "Writes one component of a vector attribute, leaving the rest alone.",
+      "help": "The node form of `@P.y = value`. Writing the whole vector back just to change one axis took a Split, a Make Vector and a Set - this is that, in one box.",
+      "params": [
+        {
+          "name": "attrib",
+          "label": "Attribute",
+          "kind": "attrib",
+          "default": "P"
+        },
+        {
+          "name": "component",
+          "label": "Component",
+          "kind": "menu",
+          "default": "y",
+          "menu": [
+            "x",
+            "y",
+            "z"
+          ]
+        },
+        {
+          "name": "type",
+          "label": "Type",
+          "kind": "menu",
+          "default": "vector",
+          "menu": [
+            "vector",
+            "vector2",
+            "vector4"
+          ]
+        }
+      ],
+      "inputs": [
+        {
+          "name": "value",
+          "type": "float",
+          "label": "Value",
+          "default": "0"
+        }
+      ],
+      "outputs": [],
+      "tags": [
+        "attribute",
+        "component",
+        "axis",
+        "y",
+        "write",
+        "set"
+      ]
+    },
+    {
       "type": "element_number",
       "category": "Attributes",
       "label": "Element Number",
