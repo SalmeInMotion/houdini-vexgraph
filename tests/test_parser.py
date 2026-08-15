@@ -340,8 +340,9 @@ def test_one_prefixed_mention_types_the_attribute_everywhere(registry):
     """`v@dir;` at the top means every later bare `@dir` is a vector."""
     code, report = imported(
         "v@dir;\n@dir = @N * 0.5;\n@P += @dir;", registry)
-    # The bare binding statement stays verbatim; everything else is nodes.
-    assert report.inlined == 1, report.reasons
+    # The bare binding statement vanishes - the prefix pre-pass already read
+    # it - and the emitted references carry the type themselves.
+    assert report.inlined == 0, report.reasons
     assert "v@dir" in code
 
 
@@ -373,10 +374,11 @@ def test_a_loop_keeps_the_variable_name_the_body_text_uses(registry):
     """Inline VEX inside the body still says `i`; the loop must too."""
     code, report = imported(
         "for (int i = 0; i < 3; i++) {\n"
-        "    while (i > 99) { @P.x = 0; }\n"
+        "    do { @P.x = i; } while (@P.x > 99);\n"
         "}", registry)
-    assert report.inlined == 1          # the while
+    assert report.inlined == 1          # the do-while
     assert "for (int i = 0" in code
+    assert "@P.x = i;" in code, "the body text must still find its i"
 
 
 def test_polymorphic_results_never_type_as_any(registry):
@@ -420,12 +422,6 @@ def test_matrix3_attributes_survive_the_round_trip(registry):
 
 # ------------------------------------------------------------ escape hatch
 
-def test_a_while_loop_becomes_one_inline_node(registry):
-    code, report = imported("int i = 0;\nwhile (i < 3) {\n    i += 1;\n}", registry)
-    assert report.inlined == 1
-    assert "while (i < 3)" in code
-
-
 def test_an_unknown_function_becomes_inline_rather_than_an_error(registry):
     code, report = imported('@P = 1;\nsome_future_function(@P, 2);', registry)
     assert report.inlined == 1
@@ -464,9 +460,9 @@ def test_hscript_variables_survive_the_round_trip(registry):
 
 
 def test_the_report_says_what_it_could_not_translate(registry):
-    report = import_vex("while (1) { @P += 1; }", registry)
+    report = import_vex("do { @P.y += 1; } while (@P.y < 3);", registry)
     assert "Inline VEX" in report.summary()
-    assert any("while" in reason for reason in report.reasons)
+    assert report.reasons
 
 
 def test_single_quoted_strings_are_read(registry):
@@ -603,3 +599,42 @@ def test_vector4_offers_its_w_component(registry):
     code, report = imported("vector4 q = p@orient; f@a = q.w;", registry)
     assert "@orient.w" in code
     assert "split_vector" not in {n.type for n in report.graph.nodes.values()}
+
+
+def test_while_loops_are_modelled(registry):
+    """Reads render by reference, so `while (n < 10)` keeps watching n."""
+    code, report = imported(
+        "int n = 0;\nwhile (n < 10) {\n    @P.y += 0.1;\n    n++;\n}", registry)
+    assert report.inlined == 0
+    assert "while (n < 10)" in code
+
+
+def test_string_concatenation_is_the_add_node(registry):
+    """`+` between strings is concatenation; the Add node set to string."""
+    code, report = imported(
+        's@name = "piece_" + itoa(i@cluster);', registry)
+    assert report.inlined == 0
+    assert '"piece_" + ' in code
+
+
+def test_sprintf_of_one_value_is_a_format_node(registry):
+    code, report = imported('s@label = sprintf("pt_%g", @ptnum * 2);', registry)
+    assert report.inlined == 0
+    assert 'sprintf("pt_%g", @ptnum * 2)' in code
+
+
+def test_a_bare_attribute_statement_vanishes_quietly(registry):
+    """`@P;` pins a binding and computes nothing; it is not a fallback."""
+    code, report = imported("@P;\n@P.y += 1;", registry)
+    assert report.inlined == 0
+    assert "@P.y = @P.y + 1;" in code
+
+
+def test_setpointattrib_takes_any_value_type(registry):
+    """The 4-argument form with a vector value used to fall inline because
+    the only indexed signature took a float."""
+    code, report = imported(
+        'int pt = addpoint(0, @P);\n'
+        'setpointattrib(0, "N", pt, normalize(-@P));', registry)
+    assert report.inlined == 0
+    assert 'setpointattrib(0, "N", add_point, normalize(-@P));' in code

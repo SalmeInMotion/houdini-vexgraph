@@ -77,11 +77,11 @@ def test_valid_vex_becomes_a_graph(registry):
 
 @needs_vcc
 def test_unmappable_but_valid_vex_survives_as_inline(registry):
-    # A while loop maps to no node; the importer's promise is that it becomes
+    # A do-while maps to no node; the importer's promise is that it becomes
     # an Inline VEX node rather than a failure.
     provider = ScriptedProvider([
         "// run over: points\n"
-        "int i = 0;\nwhile (i < 3) {\n    i++;\n}\nf@done = i;\n"])
+        "int i = 0;\ndo {\n    i++;\n} while (i < 3);\nf@done = i;\n"])
     result = Assistant(registry, provider).build_graph_via_vex("count to three")
 
     assert result.ok, result.problems

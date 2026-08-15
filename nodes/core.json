@@ -1,739 +1,766 @@
 {
-  "category": "Flow",
-  "nodes": [
+ "category": "Flow",
+ "nodes": [
+  {
+   "type": "start",
+   "label": "Start",
+   "kind": "statement",
+   "exec_in": false,
+   "builtin": "start",
+   "summary": "Where the graph begins. Steps run from here, in order.",
+   "help": "Every graph needs exactly one Start node. Drag from its arrow to the first thing that should happen.",
+   "tags": [
+    "begin",
+    "entry",
+    "run"
+   ]
+  },
+  {
+   "type": "if",
+   "label": "If",
+   "kind": "scope",
+   "exec_bodies": [
+    "then"
+   ],
+   "summary": "Runs the steps inside only when the condition is true.",
+   "inputs": [
     {
-      "type": "start",
-      "label": "Start",
-      "kind": "statement",
-      "exec_in": false,
-      "builtin": "start",
-      "summary": "Where the graph begins. Steps run from here, in order.",
-      "help": "Every graph needs exactly one Start node. Drag from its arrow to the first thing that should happen.",
-      "tags": [
-        "begin",
-        "entry",
-        "run"
-      ]
-    },
-    {
-      "type": "if",
-      "label": "If",
-      "kind": "scope",
-      "exec_bodies": [
-        "then"
-      ],
-      "summary": "Runs the steps inside only when the condition is true.",
-      "inputs": [
-        {
-          "name": "condition",
-          "type": "int",
-          "label": "Condition",
-          "default": "0",
-          "desc": "Anything that is not zero counts as true."
-        }
-      ],
-      "code": "if ({condition})\n{\n    {then}\n}",
-      "tags": [
-        "when",
-        "conditional",
-        "branch",
-        "test"
-      ]
-    },
-    {
-      "type": "if_else",
-      "label": "If / Else",
-      "kind": "scope",
-      "exec_bodies": [
-        "then",
-        "otherwise"
-      ],
-      "summary": "Takes one path when the condition is true and another when it is false.",
-      "inputs": [
-        {
-          "name": "condition",
-          "type": "int",
-          "label": "Condition",
-          "default": "0"
-        }
-      ],
-      "code": "if ({condition})\n{\n    {then}\n}\nelse\n{\n    {otherwise}\n}",
-      "tags": [
-        "when",
-        "conditional",
-        "branch",
-        "either"
-      ]
-    },
-    {
-      "type": "for_range",
-      "label": "Repeat",
-      "kind": "scope",
-      "exec_bodies": [
-        "body"
-      ],
-      "summary": "Runs the steps inside a fixed number of times.",
-      "help": "Count starts at 0, so repeating 5 times gives you 0, 1, 2, 3, 4.",
-      "inputs": [
-        {
-          "name": "start",
-          "type": "int",
-          "label": "Start",
-          "default": "0"
-        },
-        {
-          "name": "count",
-          "type": "int",
-          "label": "Times",
-          "default": "10"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "index",
-          "type": "int",
-          "label": "Number",
-          "scope": "body",
-          "desc": "Which time round the loop this is. Only exists inside."
-        }
-      ],
-      "code": "for (int {index} = {start}; {index} < {count}; {index}++)\n{\n    {body}\n}",
-      "tags": [
-        "loop",
-        "for",
-        "iterate",
-        "times"
-      ]
-    },
-    {
-      "type": "foreach",
-      "label": "For Each",
-      "kind": "scope",
-      "exec_bodies": [
-        "body"
-      ],
-      "summary": "Runs the steps inside once for every item in a list.",
-      "params": [
-        {
-          "name": "type",
-          "label": "Item Type",
-          "kind": "menu",
-          "default": "vector",
-          "menu": [
-            "float",
-            "int",
-            "vector",
-            "vector2",
-            "vector4",
-            "string",
-            "matrix2",
-            "matrix3",
-            "matrix",
-            "dict"
-          ],
-          "retypes": [
-            "items",
-            "item"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "items",
-          "type": "any[]",
-          "label": "List"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "index",
-          "type": "int",
-          "label": "Position",
-          "scope": "body"
-        },
-        {
-          "name": "item",
-          "type": "any",
-          "label": "Item",
-          "scope": "body"
-        }
-      ],
-      "code": "int {index};\n{type} {item};\nforeach ({index}, {item}; {items})\n{\n    {body}\n}",
-      "tags": [
-        "loop",
-        "iterate",
-        "array",
-        "list",
-        "each"
-      ]
-    },
-    {
-      "type": "break_if",
-      "label": "Stop Repeating If",
-      "kind": "statement",
-      "summary": "Leaves the surrounding loop early when the condition is true.",
-      "inputs": [
-        {
-          "name": "condition",
-          "type": "int",
-          "label": "Condition",
-          "default": "0"
-        }
-      ],
-      "code": "if ({condition})\n    break;",
-      "tags": [
-        "break",
-        "exit",
-        "loop",
-        "stop"
-      ],
-      "requires_loop": true
-    },
-    {
-      "type": "skip_if",
-      "label": "Skip Rest If",
-      "kind": "statement",
-      "summary": "Jumps to the next turn of the surrounding loop when the condition is true.",
-      "inputs": [
-        {
-          "name": "condition",
-          "type": "int",
-          "label": "Condition",
-          "default": "0"
-        }
-      ],
-      "code": "if ({condition})\n    continue;",
-      "tags": [
-        "continue",
-        "skip",
-        "loop",
-        "next"
-      ],
-      "requires_loop": true
-    },
-    {
-      "type": "note",
-      "label": "Note",
-      "kind": "statement",
-      "summary": "A comment in the generated code. Does nothing.",
-      "params": [
-        {
-          "name": "text",
-          "label": "Text",
-          "kind": "string",
-          "default": "note"
-        }
-      ],
-      "code": "// {text}",
-      "tags": [
-        "comment",
-        "label",
-        "documentation"
-      ]
-    },
-    {
-      "type": "var_make",
-      "category": "Variables",
-      "label": "Make Variable",
-      "kind": "statement",
-      "builtin": "var_declare",
-      "summary": "Creates a named value you can change later and read anywhere after this.",
-      "help": "Use this when a value has to survive a loop: make it before the loop, change it inside, read it after.",
-      "params": [
-        {
-          "name": "name",
-          "label": "Name",
-          "kind": "string",
-          "default": "total"
-        },
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "float",
-          "menu": [
-            "float",
-            "int",
-            "vector",
-            "string",
-            "vector4",
-            "matrix",
-            "vector2",
-            "matrix2",
-            "matrix3",
-            "dict",
-            "int[]",
-            "float[]",
-            "vector2[]",
-            "vector[]",
-            "vector4[]",
-            "matrix2[]",
-            "matrix3[]",
-            "matrix[]",
-            "string[]",
-            "dict[]"
-          ],
-          "retypes": [
-            "value"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "value",
-          "type": "any",
-          "label": "Starting Value",
-          "default": "0"
-        }
-      ],
-      "tags": [
-        "variable",
-        "declare",
-        "store",
-        "accumulate"
-      ]
-    },
-    {
-      "type": "var_set",
-      "category": "Variables",
-      "label": "Set Variable",
-      "kind": "statement",
-      "builtin": "var_set",
-      "summary": "Replaces what a variable holds.",
-      "params": [
-        {
-          "name": "name",
-          "label": "Name",
-          "kind": "string",
-          "default": "total"
-        },
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "float",
-          "menu": [
-            "float",
-            "int",
-            "vector",
-            "string",
-            "vector4",
-            "matrix",
-            "vector2",
-            "matrix2",
-            "matrix3",
-            "dict",
-            "int[]",
-            "float[]",
-            "vector2[]",
-            "vector[]",
-            "vector4[]",
-            "matrix2[]",
-            "matrix3[]",
-            "matrix[]",
-            "string[]",
-            "dict[]"
-          ],
-          "retypes": [
-            "value"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "value",
-          "type": "any",
-          "label": "New Value"
-        }
-      ],
-      "tags": [
-        "variable",
-        "assign",
-        "store"
-      ]
-    },
-    {
-      "type": "var_get",
-      "category": "Variables",
-      "label": "Get Variable",
-      "kind": "pure",
-      "builtin": "var_get",
-      "summary": "Reads what a variable currently holds.",
-      "params": [
-        {
-          "name": "name",
-          "label": "Name",
-          "kind": "string",
-          "default": "total"
-        },
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "float",
-          "menu": [
-            "float",
-            "int",
-            "vector",
-            "string",
-            "vector4",
-            "matrix",
-            "vector2",
-            "matrix2",
-            "matrix3",
-            "dict",
-            "int[]",
-            "float[]",
-            "vector2[]",
-            "vector[]",
-            "vector4[]",
-            "matrix2[]",
-            "matrix3[]",
-            "matrix[]",
-            "string[]",
-            "dict[]"
-          ],
-          "retypes": [
-            "value"
-          ]
-        }
-      ],
-      "outputs": [
-        {
-          "name": "value",
-          "type": "any",
-          "label": "Value"
-        }
-      ],
-      "tags": [
-        "variable",
-        "read",
-        "load"
-      ]
-    },
-    {
-      "type": "choose",
-      "category": "Flow",
-      "label": "Choose",
-      "summary": "Picks A when the condition is true, B when it is false.",
-      "help": "The dataflow twin of an If: an If runs different statements, Choose picks between two values. VOP calls this Two Way Switch.",
-      "params": [
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "float",
-          "menu": [
-            "float",
-            "int",
-            "vector",
-            "vector2",
-            "vector4",
-            "string",
-            "matrix2",
-            "matrix3",
-            "matrix",
-            "dict"
-          ],
-          "retypes": [
-            "a",
-            "b",
-            "result"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "condition",
-          "type": "int",
-          "label": "Condition",
-          "default": "0"
-        },
-        {
-          "name": "a",
-          "type": "any",
-          "label": "If True",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "any",
-          "label": "If False",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "any",
-          "label": "Result"
-        }
-      ],
-      "expr": "({condition} ? {a} : {b})",
-      "tags": [
-        "ternary",
-        "select",
-        "switch",
-        "two way",
-        "condition",
-        "pick"
-      ]
-    },
-    {
-      "type": "attrib_get",
-      "category": "Attributes",
-      "label": "Get Attribute",
-      "kind": "pure",
-      "builtin": "attrib_get",
-      "summary": "Reads an attribute of the point (or primitive) being worked on.",
-      "help": "P is position, N is normal, Cd is colour. Type has to match how the attribute was made, or Houdini will read nonsense.",
-      "params": [
-        {
-          "name": "attrib",
-          "label": "Attribute",
-          "kind": "attrib",
-          "default": "P"
-        },
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "vector",
-          "menu": [
-            "float",
-            "int",
-            "vector",
-            "vector2",
-            "vector4",
-            "string",
-            "matrix2",
-            "matrix3",
-            "matrix",
-            "dict"
-          ],
-          "retypes": [
-            "value"
-          ]
-        }
-      ],
-      "outputs": [
-        {
-          "name": "value",
-          "type": "any",
-          "label": "Value"
-        }
-      ],
-      "tags": [
-        "attribute",
-        "read",
-        "P",
-        "N",
-        "Cd",
-        "position",
-        "colour",
-        "color"
-      ]
-    },
-    {
-      "type": "attrib_set",
-      "category": "Attributes",
-      "label": "Set Attribute",
-      "kind": "statement",
-      "builtin": "attrib_set",
-      "summary": "Writes an attribute on the point (or primitive) being worked on.",
-      "help": "Writing an attribute that does not exist yet creates it.",
-      "params": [
-        {
-          "name": "attrib",
-          "label": "Attribute",
-          "kind": "attrib",
-          "default": "Cd"
-        },
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "vector",
-          "menu": [
-            "float",
-            "int",
-            "vector",
-            "vector2",
-            "vector4",
-            "string",
-            "matrix2",
-            "matrix3",
-            "matrix",
-            "dict"
-          ],
-          "retypes": [
-            "value"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "value",
-          "type": "any",
-          "label": "Value"
-        }
-      ],
-      "tags": [
-        "attribute",
-        "write",
-        "P",
-        "N",
-        "Cd",
-        "position",
-        "colour",
-        "color"
-      ]
-    },
-    {
-      "type": "attrib_set_component",
-      "category": "Attributes",
-      "label": "Set Attribute Component",
-      "kind": "statement",
-      "builtin": "attrib_set_component",
-      "summary": "Writes one component of a vector attribute, leaving the rest alone.",
-      "help": "The node form of `@P.y = value`. Writing the whole vector back just to change one axis took a Split, a Make Vector and a Set - this is that, in one box.",
-      "params": [
-        {
-          "name": "attrib",
-          "label": "Attribute",
-          "kind": "attrib",
-          "default": "P"
-        },
-        {
-          "name": "component",
-          "label": "Component",
-          "kind": "menu",
-          "default": "y",
-          "menu": [
-            "x",
-            "y",
-            "z"
-          ]
-        },
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "vector",
-          "menu": [
-            "vector",
-            "vector2",
-            "vector4"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "value",
-          "type": "float",
-          "label": "Value",
-          "default": "0"
-        }
-      ],
-      "outputs": [],
-      "tags": [
-        "attribute",
-        "component",
-        "axis",
-        "y",
-        "write",
-        "set"
-      ]
-    },
-    {
-      "type": "element_number",
-      "category": "Attributes",
-      "label": "Element Number",
-      "kind": "pure",
-      "repeatable": true,
-      "summary": "Which point (or primitive) is being worked on right now, counting from 0.",
-      "outputs": [
-        {
-          "name": "number",
-          "type": "int",
-          "label": "Number"
-        }
-      ],
-      "expr": "@elemnum",
-      "tags": [
-        "ptnum",
-        "index",
-        "id",
-        "current",
-        "number"
-      ]
-    },
-    {
-      "type": "element_count",
-      "category": "Attributes",
-      "label": "Element Count",
-      "kind": "pure",
-      "repeatable": true,
-      "summary": "How many points (or primitives) are being worked on in total.",
-      "outputs": [
-        {
-          "name": "count",
-          "type": "int",
-          "label": "Count"
-        }
-      ],
-      "expr": "@numelem",
-      "tags": [
-        "numpt",
-        "total",
-        "count",
-        "how many"
-      ]
-    },
-    {
-      "type": "current_frame",
-      "category": "Attributes",
-      "label": "Current Frame",
-      "kind": "pure",
-      "repeatable": true,
-      "summary": "The frame being cooked.",
-      "outputs": [
-        {
-          "name": "frame",
-          "type": "float",
-          "label": "Frame"
-        }
-      ],
-      "expr": "@Frame",
-      "tags": [
-        "frame",
-        "time",
-        "animation"
-      ]
-    },
-    {
-      "type": "inline_vex",
-      "category": "Flow",
-      "label": "Inline VEX",
-      "kind": "statement",
-      "summary": "VEX written by hand, dropped in as-is.",
-      "help": "The escape hatch. Anything the graph cannot express - and anything the VEX importer could not translate - lives here verbatim, so a graph is never blocked on a missing node.",
-      "params": [
-        {
-          "name": "code",
-          "label": "VEX",
-          "kind": "text",
-          "default": "// your VEX here"
-        }
-      ],
-      "code": "{code}",
-      "tags": [
-        "raw",
-        "snippet",
-        "escape",
-        "custom",
-        "hand-written"
-      ]
+     "name": "condition",
+     "type": "int",
+     "label": "Condition",
+     "default": "0",
+     "desc": "Anything that is not zero counts as true."
     }
-  ]
+   ],
+   "code": "if ({condition})\n{\n    {then}\n}",
+   "tags": [
+    "when",
+    "conditional",
+    "branch",
+    "test"
+   ]
+  },
+  {
+   "type": "if_else",
+   "label": "If / Else",
+   "kind": "scope",
+   "exec_bodies": [
+    "then",
+    "otherwise"
+   ],
+   "summary": "Takes one path when the condition is true and another when it is false.",
+   "inputs": [
+    {
+     "name": "condition",
+     "type": "int",
+     "label": "Condition",
+     "default": "0"
+    }
+   ],
+   "code": "if ({condition})\n{\n    {then}\n}\nelse\n{\n    {otherwise}\n}",
+   "tags": [
+    "when",
+    "conditional",
+    "branch",
+    "either"
+   ]
+  },
+  {
+   "type": "for_range",
+   "label": "Repeat",
+   "kind": "scope",
+   "exec_bodies": [
+    "body"
+   ],
+   "summary": "Runs the steps inside a fixed number of times.",
+   "help": "Count starts at 0, so repeating 5 times gives you 0, 1, 2, 3, 4.",
+   "inputs": [
+    {
+     "name": "start",
+     "type": "int",
+     "label": "Start",
+     "default": "0"
+    },
+    {
+     "name": "count",
+     "type": "int",
+     "label": "Times",
+     "default": "10"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "index",
+     "type": "int",
+     "label": "Number",
+     "scope": "body",
+     "desc": "Which time round the loop this is. Only exists inside."
+    }
+   ],
+   "code": "for (int {index} = {start}; {index} < {count}; {index}++)\n{\n    {body}\n}",
+   "tags": [
+    "loop",
+    "for",
+    "iterate",
+    "times"
+   ]
+  },
+  {
+   "type": "foreach",
+   "label": "For Each",
+   "kind": "scope",
+   "exec_bodies": [
+    "body"
+   ],
+   "summary": "Runs the steps inside once for every item in a list.",
+   "params": [
+    {
+     "name": "type",
+     "label": "Item Type",
+     "kind": "menu",
+     "default": "vector",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4",
+      "string",
+      "matrix2",
+      "matrix3",
+      "matrix",
+      "dict"
+     ],
+     "retypes": [
+      "items",
+      "item"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "items",
+     "type": "any[]",
+     "label": "List"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "index",
+     "type": "int",
+     "label": "Position",
+     "scope": "body"
+    },
+    {
+     "name": "item",
+     "type": "any",
+     "label": "Item",
+     "scope": "body"
+    }
+   ],
+   "code": "int {index};\n{type} {item};\nforeach ({index}, {item}; {items})\n{\n    {body}\n}",
+   "tags": [
+    "loop",
+    "iterate",
+    "array",
+    "list",
+    "each"
+   ]
+  },
+  {
+   "type": "while",
+   "label": "While",
+   "kind": "scope",
+   "exec_bodies": [
+    "body"
+   ],
+   "summary": "Runs the steps inside for as long as the condition stays true.",
+   "help": "Something inside the loop must change the condition, or it never ends.",
+   "inputs": [
+    {
+     "name": "condition",
+     "type": "int",
+     "label": "Condition",
+     "default": "0",
+     "desc": "Checked before every pass; anything not zero counts as true."
+    }
+   ],
+   "code": "while ({condition})\n{\n    {body}\n}",
+   "tags": [
+    "loop",
+    "while",
+    "until",
+    "repeat",
+    "condition"
+   ]
+  },
+  {
+   "type": "break_if",
+   "label": "Stop Repeating If",
+   "kind": "statement",
+   "summary": "Leaves the surrounding loop early when the condition is true.",
+   "inputs": [
+    {
+     "name": "condition",
+     "type": "int",
+     "label": "Condition",
+     "default": "0"
+    }
+   ],
+   "code": "if ({condition})\n    break;",
+   "tags": [
+    "break",
+    "exit",
+    "loop",
+    "stop"
+   ],
+   "requires_loop": true
+  },
+  {
+   "type": "skip_if",
+   "label": "Skip Rest If",
+   "kind": "statement",
+   "summary": "Jumps to the next turn of the surrounding loop when the condition is true.",
+   "inputs": [
+    {
+     "name": "condition",
+     "type": "int",
+     "label": "Condition",
+     "default": "0"
+    }
+   ],
+   "code": "if ({condition})\n    continue;",
+   "tags": [
+    "continue",
+    "skip",
+    "loop",
+    "next"
+   ],
+   "requires_loop": true
+  },
+  {
+   "type": "note",
+   "label": "Note",
+   "kind": "statement",
+   "summary": "A comment in the generated code. Does nothing.",
+   "params": [
+    {
+     "name": "text",
+     "label": "Text",
+     "kind": "string",
+     "default": "note"
+    }
+   ],
+   "code": "// {text}",
+   "tags": [
+    "comment",
+    "label",
+    "documentation"
+   ]
+  },
+  {
+   "type": "var_make",
+   "category": "Variables",
+   "label": "Make Variable",
+   "kind": "statement",
+   "builtin": "var_declare",
+   "summary": "Creates a named value you can change later and read anywhere after this.",
+   "help": "Use this when a value has to survive a loop: make it before the loop, change it inside, read it after.",
+   "params": [
+    {
+     "name": "name",
+     "label": "Name",
+     "kind": "string",
+     "default": "total"
+    },
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "string",
+      "vector4",
+      "matrix",
+      "vector2",
+      "matrix2",
+      "matrix3",
+      "dict",
+      "int[]",
+      "float[]",
+      "vector2[]",
+      "vector[]",
+      "vector4[]",
+      "matrix2[]",
+      "matrix3[]",
+      "matrix[]",
+      "string[]",
+      "dict[]"
+     ],
+     "retypes": [
+      "value"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "value",
+     "type": "any",
+     "label": "Starting Value",
+     "default": "0"
+    }
+   ],
+   "tags": [
+    "variable",
+    "declare",
+    "store",
+    "accumulate"
+   ]
+  },
+  {
+   "type": "var_set",
+   "category": "Variables",
+   "label": "Set Variable",
+   "kind": "statement",
+   "builtin": "var_set",
+   "summary": "Replaces what a variable holds.",
+   "params": [
+    {
+     "name": "name",
+     "label": "Name",
+     "kind": "string",
+     "default": "total"
+    },
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "string",
+      "vector4",
+      "matrix",
+      "vector2",
+      "matrix2",
+      "matrix3",
+      "dict",
+      "int[]",
+      "float[]",
+      "vector2[]",
+      "vector[]",
+      "vector4[]",
+      "matrix2[]",
+      "matrix3[]",
+      "matrix[]",
+      "string[]",
+      "dict[]"
+     ],
+     "retypes": [
+      "value"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "value",
+     "type": "any",
+     "label": "New Value"
+    }
+   ],
+   "tags": [
+    "variable",
+    "assign",
+    "store"
+   ]
+  },
+  {
+   "type": "var_get",
+   "category": "Variables",
+   "label": "Get Variable",
+   "kind": "pure",
+   "builtin": "var_get",
+   "summary": "Reads what a variable currently holds.",
+   "params": [
+    {
+     "name": "name",
+     "label": "Name",
+     "kind": "string",
+     "default": "total"
+    },
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "string",
+      "vector4",
+      "matrix",
+      "vector2",
+      "matrix2",
+      "matrix3",
+      "dict",
+      "int[]",
+      "float[]",
+      "vector2[]",
+      "vector[]",
+      "vector4[]",
+      "matrix2[]",
+      "matrix3[]",
+      "matrix[]",
+      "string[]",
+      "dict[]"
+     ],
+     "retypes": [
+      "value"
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "name": "value",
+     "type": "any",
+     "label": "Value"
+    }
+   ],
+   "tags": [
+    "variable",
+    "read",
+    "load"
+   ]
+  },
+  {
+   "type": "choose",
+   "category": "Flow",
+   "label": "Choose",
+   "summary": "Picks A when the condition is true, B when it is false.",
+   "help": "The dataflow twin of an If: an If runs different statements, Choose picks between two values. VOP calls this Two Way Switch.",
+   "params": [
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4",
+      "string",
+      "matrix2",
+      "matrix3",
+      "matrix",
+      "dict"
+     ],
+     "retypes": [
+      "a",
+      "b",
+      "result"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "condition",
+     "type": "int",
+     "label": "Condition",
+     "default": "0"
+    },
+    {
+     "name": "a",
+     "type": "any",
+     "label": "If True",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "any",
+     "label": "If False",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "any",
+     "label": "Result"
+    }
+   ],
+   "expr": "({condition} ? {a} : {b})",
+   "tags": [
+    "ternary",
+    "select",
+    "switch",
+    "two way",
+    "condition",
+    "pick"
+   ]
+  },
+  {
+   "type": "attrib_get",
+   "category": "Attributes",
+   "label": "Get Attribute",
+   "kind": "pure",
+   "builtin": "attrib_get",
+   "summary": "Reads an attribute of the point (or primitive) being worked on.",
+   "help": "P is position, N is normal, Cd is colour. Type has to match how the attribute was made, or Houdini will read nonsense.",
+   "params": [
+    {
+     "name": "attrib",
+     "label": "Attribute",
+     "kind": "attrib",
+     "default": "P"
+    },
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "vector",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4",
+      "string",
+      "matrix2",
+      "matrix3",
+      "matrix",
+      "dict"
+     ],
+     "retypes": [
+      "value"
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "name": "value",
+     "type": "any",
+     "label": "Value"
+    }
+   ],
+   "tags": [
+    "attribute",
+    "read",
+    "P",
+    "N",
+    "Cd",
+    "position",
+    "colour",
+    "color"
+   ]
+  },
+  {
+   "type": "attrib_set",
+   "category": "Attributes",
+   "label": "Set Attribute",
+   "kind": "statement",
+   "builtin": "attrib_set",
+   "summary": "Writes an attribute on the point (or primitive) being worked on.",
+   "help": "Writing an attribute that does not exist yet creates it.",
+   "params": [
+    {
+     "name": "attrib",
+     "label": "Attribute",
+     "kind": "attrib",
+     "default": "Cd"
+    },
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "vector",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4",
+      "string",
+      "matrix2",
+      "matrix3",
+      "matrix",
+      "dict"
+     ],
+     "retypes": [
+      "value"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "value",
+     "type": "any",
+     "label": "Value"
+    }
+   ],
+   "tags": [
+    "attribute",
+    "write",
+    "P",
+    "N",
+    "Cd",
+    "position",
+    "colour",
+    "color"
+   ]
+  },
+  {
+   "type": "attrib_set_component",
+   "category": "Attributes",
+   "label": "Set Attribute Component",
+   "kind": "statement",
+   "builtin": "attrib_set_component",
+   "summary": "Writes one component of a vector attribute, leaving the rest alone.",
+   "help": "The node form of `@P.y = value`. Writing the whole vector back just to change one axis took a Split, a Make Vector and a Set - this is that, in one box.",
+   "params": [
+    {
+     "name": "attrib",
+     "label": "Attribute",
+     "kind": "attrib",
+     "default": "P"
+    },
+    {
+     "name": "component",
+     "label": "Component",
+     "kind": "menu",
+     "default": "y",
+     "menu": [
+      "x",
+      "y",
+      "z"
+     ]
+    },
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "vector",
+     "menu": [
+      "vector",
+      "vector2",
+      "vector4"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "value",
+     "type": "float",
+     "label": "Value",
+     "default": "0"
+    }
+   ],
+   "outputs": [],
+   "tags": [
+    "attribute",
+    "component",
+    "axis",
+    "y",
+    "write",
+    "set"
+   ]
+  },
+  {
+   "type": "element_number",
+   "category": "Attributes",
+   "label": "Element Number",
+   "kind": "pure",
+   "repeatable": true,
+   "summary": "Which point (or primitive) is being worked on right now, counting from 0.",
+   "outputs": [
+    {
+     "name": "number",
+     "type": "int",
+     "label": "Number"
+    }
+   ],
+   "expr": "@elemnum",
+   "tags": [
+    "ptnum",
+    "index",
+    "id",
+    "current",
+    "number"
+   ]
+  },
+  {
+   "type": "element_count",
+   "category": "Attributes",
+   "label": "Element Count",
+   "kind": "pure",
+   "repeatable": true,
+   "summary": "How many points (or primitives) are being worked on in total.",
+   "outputs": [
+    {
+     "name": "count",
+     "type": "int",
+     "label": "Count"
+    }
+   ],
+   "expr": "@numelem",
+   "tags": [
+    "numpt",
+    "total",
+    "count",
+    "how many"
+   ]
+  },
+  {
+   "type": "current_frame",
+   "category": "Attributes",
+   "label": "Current Frame",
+   "kind": "pure",
+   "repeatable": true,
+   "summary": "The frame being cooked.",
+   "outputs": [
+    {
+     "name": "frame",
+     "type": "float",
+     "label": "Frame"
+    }
+   ],
+   "expr": "@Frame",
+   "tags": [
+    "frame",
+    "time",
+    "animation"
+   ]
+  },
+  {
+   "type": "inline_vex",
+   "category": "Flow",
+   "label": "Inline VEX",
+   "kind": "statement",
+   "summary": "VEX written by hand, dropped in as-is.",
+   "help": "The escape hatch. Anything the graph cannot express - and anything the VEX importer could not translate - lives here verbatim, so a graph is never blocked on a missing node.",
+   "params": [
+    {
+     "name": "code",
+     "label": "VEX",
+     "kind": "text",
+     "default": "// your VEX here"
+    }
+   ],
+   "code": "{code}",
+   "tags": [
+    "raw",
+    "snippet",
+    "escape",
+    "custom",
+    "hand-written"
+   ]
+  }
+ ]
 }

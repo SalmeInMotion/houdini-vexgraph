@@ -133,6 +133,16 @@ def load() -> list[Snippet]:
             text = path.read_text(encoding="utf8", errors="replace")
         except OSError:
             continue
+        # Snippets travel through web pages and word processors before they
+        # get here, picking up smart quotes and stray byte-order marks - and
+        # not only at the start of the file: a BOM pasted mid-line breaks the
+        # lexer at "line 27". vcc accepts none of these, so a snippet is
+        # normalised the way its author meant it, not the way a clipboard
+        # mangled it.
+        text = (text.replace("\ufeff", "")
+                    .replace("“", '"').replace("”", '"')
+                    .replace("„", '"')
+                    .replace("‘", "'").replace("’", "'"))
         reader = parse_json if path.suffix.lower() == ".json" else parse
         for snippet in reader(text, source=path.name):
             key = (snippet.name.lower(), snippet.code)

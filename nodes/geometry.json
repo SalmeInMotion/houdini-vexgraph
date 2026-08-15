@@ -771,6 +771,135 @@
     "middle",
     "extent"
    ]
+  },
+  {
+   "type": "write_point_attribute_plain",
+   "label": "Write Point Attribute",
+   "tier": 2,
+   "kind": "statement",
+   "summary": "Writes an attribute onto any point (4-argument form).",
+   "params": [
+    {
+     "name": "input",
+     "label": "Input",
+     "kind": "int",
+     "default": "0"
+    },
+    {
+     "name": "attrib",
+     "label": "Attribute",
+     "kind": "attrib",
+     "default": "Cd"
+    },
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "vector",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4",
+      "string",
+      "matrix2",
+      "matrix3",
+      "matrix",
+      "dict"
+     ],
+     "retypes": [
+      "value"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "geometry",
+     "type": "int",
+     "label": "Geometry",
+     "default": "0"
+    },
+    {
+     "name": "point_number",
+     "type": "int",
+     "label": "Point Number",
+     "default": "@elemnum"
+    },
+    {
+     "name": "value",
+     "type": "any",
+     "label": "Value"
+    }
+   ],
+   "code": "setpointattrib({geometry}, \"{attrib}\", {point_number}, {value});",
+   "tags": [
+    "setpointattrib",
+    "write",
+    "attribute"
+   ]
+  },
+  {
+   "type": "write_prim_intrinsic",
+   "label": "Write Prim Intrinsic",
+   "tier": 2,
+   "kind": "statement",
+   "summary": "Writes an intrinsic (pivot, transform...) onto a primitive.",
+   "params": [
+    {
+     "name": "name",
+     "label": "Intrinsic",
+     "kind": "string",
+     "default": "pivot"
+    },
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "vector",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4",
+      "string",
+      "matrix2",
+      "matrix3",
+      "matrix",
+      "dict"
+     ],
+     "retypes": [
+      "value"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "geometry",
+     "type": "int",
+     "label": "Geometry",
+     "default": "0"
+    },
+    {
+     "name": "prim_number",
+     "type": "int",
+     "label": "Prim Number",
+     "default": "@elemnum"
+    },
+    {
+     "name": "value",
+     "type": "any",
+     "label": "Value"
+    }
+   ],
+   "code": "setprimintrinsic({geometry}, \"{name}\", {prim_number}, {value});",
+   "tags": [
+    "setprimintrinsic",
+    "packed",
+    "pivot",
+    "intrinsic"
+   ]
   }
  ]
 }

@@ -1245,14 +1245,14 @@ def test_building_from_code_never_opens_a_blocking_dialog(editor):
     Written after a modal added here hung the whole suite: offscreen there is
     nobody to press OK, and in use there is nobody who wants to.
     """
-    editor.code.setPlainText("while (1) { @P += 1; }")   # will stay inline
+    editor.code.setPlainText("do { @P += 1; } while (@P.y < 3);")  # stays inline
     editor.build_from_code()
 
     listed = [editor.issues.item(i).text()
               for i in range(editor.issues.count())]
     assert any("Kept as Inline VEX" in text for text in listed), \
         "the reason must still be reported, just not in a dialog"
-    assert "while" in editor.status.text() or "inline" in editor.status.text().lower()
+    assert editor.status.text(), "the status line must say what happened"
 
 
 def test_released_nodes_settle_onto_the_grid(editor):

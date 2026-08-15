@@ -1,0 +1,106 @@
+{
+ "category": "Strings",
+ "nodes": [
+  {
+   "type": "format_text",
+   "label": "Format Text",
+   "repeatable": true,
+   "summary": "A number written into a piece of text, like \"piece_%g\" becoming piece_3.",
+   "params": [
+    {
+     "name": "format",
+     "label": "Format",
+     "kind": "string",
+     "default": "%g"
+    },
+    {
+     "name": "type",
+     "label": "Value Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4",
+      "string"
+     ],
+     "retypes": [
+      "value"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "value",
+     "type": "any",
+     "label": "Value",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "string",
+     "label": "Text"
+    }
+   ],
+   "expr": "sprintf(\"{format}\", {value})",
+   "tags": [
+    "sprintf",
+    "format",
+    "text",
+    "string",
+    "itoa",
+    "number"
+   ]
+  },
+  {
+   "type": "print_value",
+   "label": "Print",
+   "kind": "statement",
+   "summary": "Writes a value to the console while the wrangle runs. For seeing what is happening, not for the result.",
+   "params": [
+    {
+     "name": "format",
+     "label": "Format",
+     "kind": "string",
+     "default": "%g\\n"
+    },
+    {
+     "name": "type",
+     "label": "Value Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4",
+      "string"
+     ],
+     "retypes": [
+      "value"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "value",
+     "type": "any",
+     "label": "Value",
+     "default": "0"
+    }
+   ],
+   "code": "printf(\"{format}\", {value});",
+   "tags": [
+    "printf",
+    "debug",
+    "console",
+    "log"
+   ]
+  }
+ ]
+}

@@ -503,6 +503,13 @@ class Importer:
         if isinstance(statement, Assign):
             return self._assign(statement)
         if isinstance(statement, ExprStatement):
+            # `@P;` on a line of its own is an idiom, not a computation: it
+            # pins the attribute binding and does nothing else. The prefix
+            # pre-pass already read its type from the source text, so the
+            # statement itself can vanish without changing the meaning.
+            if isinstance(statement.value, (Attribute, Name)):
+                self.report.total -= 1
+                return ""
             return self._call_statement(statement)
         if isinstance(statement, If):
             return self._if(statement)
@@ -515,12 +522,12 @@ class Importer:
                 "break_if" if statement.word == "break" else "skip_if",
                 self._name(statement.word), condition="1")
             return node.id
+        if isinstance(statement, While):
+            return self._while(statement)
         if isinstance(statement, Block) and not statement.body:
             self.report.total -= 1              # a bare `;` is not a statement
             return ""
-        if isinstance(statement, (Raw, While, Block)):
-            if isinstance(statement, While):
-                raise Unsupported("while loops are not modelled")
+        if isinstance(statement, (Raw, Block)):
             raise Unsupported(getattr(statement, "reason", "") or "no node models this")
         raise Unsupported(f"{type(statement).__name__} is not modelled")
 
@@ -749,6 +756,64 @@ class Importer:
                 limit = Binary(op="+", left=limit,
                                right=Literal(text="1", kind="int"))
         return setup.name, setup.value.text, limit
+
+    def _while(self, statement: While) -> str:
+        """A while is safe to model because reads render by reference.
+
+        The condition is re-evaluated every pass in the emitted code, and the
+        graph keeps that meaning for free: a variable read emits its *name*,
+        not a snapshot, so `while (n < 10)` keeps watching n as the body
+        changes it.
+
+        The exception is a condition that *does* something - `while
+        (pciterate(h))` advances an iterator every time it is asked. Such a
+        call places a node in the run order, which would emit once, outside
+        the loop: code that compiles and quietly means something else. The
+        cursor moving while the condition lowers is exactly that case, and
+        the whole statement stays verbatim instead.
+        """
+        node = self.graph.add("while", self._name("while"))
+        before = self._cursor
+        condition = self._expression(statement.condition)
+        if self._cursor != before or not self._re_evaluates(condition):
+            raise Unsupported(
+                "a while condition with side effects stays as written")
+        self._feed(node.id, "condition", self._as_condition(condition))
+        self._chain_body(node.id, statement.body, pin="body")
+        return node.id
+
+    def _re_evaluates(self, value: Value) -> bool:
+        """Whether this value's text is composed fresh at every use site.
+
+        That is what a while condition needs: everything it depends on must
+        render *inside* the header - a reference (@P, a variable, a loop
+        index) or an inlined pure expression - so the loop actually watches
+        it. A node that gets materialised outside (a pure with a code
+        template, like the mis-generated "pure" pciterate; or one shared
+        widely enough to be hoisted into a variable) would be sampled once,
+        and the emitted loop would compile while meaning something else.
+        """
+        if not value.is_port:
+            return True
+        seen: set[str] = set()
+
+        def fresh(node_id: str) -> bool:
+            if node_id in seen:
+                return True
+            seen.add(node_id)
+            definition = self.registry.require(self.graph.nodes[node_id].type)
+            if definition.builtin in ("attrib_get", "var_get", "split_vector"):
+                return True             # emitted as a reference at each use
+            if definition.kind == "scope":
+                return True             # a loop output emits as its variable
+            if definition.kind != "pure" or not definition.expr:
+                return False
+            if len(self.graph.consumers_of(node_id)) > 1:
+                return False            # will be hoisted, and sampled once
+            return all(fresh(link.from_node) for link in self.graph.links
+                       if link.to_node == node_id and not link.is_exec)
+
+        return fresh(value.node)
 
     def _foreach(self, statement: ForEach) -> str:
         element = statement.value_type or self._element_type(statement.array)
@@ -1389,6 +1454,10 @@ class Importer:
     def _widest(self, operands: list[Expr]) -> str:
         """The type an operation between these operands produces."""
         types = [self._type_of(o) for o in operands]
+        # `+` between strings is concatenation; there is no widening ladder
+        # for text, only all-text or a type error the compiler already made.
+        if types and all(t == "string" for t in types):
+            return "string"
         best = "int"
         for vex_type in types:
             if WIDTH.get(vex_type, -1) > WIDTH.get(best, -1):

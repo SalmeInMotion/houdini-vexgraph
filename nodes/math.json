@@ -16,7 +16,8 @@
       "int",
       "vector",
       "vector2",
-      "vector4"
+      "vector4",
+      "string"
      ],
      "retypes": [
       "a",
@@ -48,9 +49,12 @@
    ],
    "expr": "{a} + {b}",
    "tags": [
+    "+",
+    "concat",
+    "join",
     "plus",
     "sum",
-    "+"
+    "text"
    ]
   },
   {
@@ -1560,6 +1564,52 @@
     "fit01",
     "between",
     "jitter"
+   ]
+  },
+  {
+   "type": "random_seeded",
+   "category": "Random",
+   "label": "Random (any seed)",
+   "tier": 2,
+   "summary": "A repeatable random number from any seed - a position works as well as a number.",
+   "params": [
+    {
+     "name": "type",
+     "label": "Seed Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4"
+     ],
+     "retypes": [
+      "seed"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "seed",
+     "type": "any",
+     "label": "Seed",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "value",
+     "type": "float",
+     "label": "Value"
+    }
+   ],
+   "expr": "random({seed})",
+   "tags": [
+    "random",
+    "hash",
+    "seed"
    ]
   }
  ]
