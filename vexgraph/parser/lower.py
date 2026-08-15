@@ -278,6 +278,12 @@ class Importer:
         # Set Variable nodes made for a call statement's out-arguments; the
         # chain appends them right after the statement they belong to.
         self._pending_setters: list[str] = []
+        # One read node per binding per epoch. `@P` mentioned five times used
+        # to be five identical Get Attribute nodes - 40% of an imported graph
+        # was this kind of plumbing. A read is the *binding*, not a snapshot,
+        # so mentions may share a node until something writes that binding,
+        # which starts a new epoch. Keys: ("attr"|"var", name, type).
+        self._read_cache: dict[tuple[str, str, str], tuple[str, str]] = {}
         self._counter = 0
         # Where the next node in run order attaches: (node id, exec pin). Kept
         # current while a statement lowers so that a call with side effects
@@ -398,10 +404,12 @@ class Importer:
         vex_type = statement.type + ("[]" if statement.is_array else "")
         self.variables[statement.name] = vex_type
         self._declared_depth[statement.name] = self._depth
+        self._invalidate_reads("var", statement.name)
         maker = self.graph.add("var_make", self._name("make"),
                                name=statement.name, type=vex_type)
         self._declared_by[statement.name] = maker.id
 
+        self._read_cache.clear()      # its inline half can read-modify-write
         assignment = f"{statement.name} ={text[opener.end():]}".strip()
         if not assignment.endswith((";", "}")):
             assignment += ";"
@@ -423,6 +431,7 @@ class Importer:
             text += ";"
         self.report.inlined += 1
         self.report.reasons.append(reason)
+        self._read_cache.clear()      # verbatim text can write anything
         nodes = self._materialise_aliases(text)
         nodes.append(self.graph.add("inline_vex", self._name("inline"),
                                     code=text).id)
@@ -493,6 +502,7 @@ class Importer:
             self.variables[statement.name] = statement.type
             return ""
         vex_type = statement.type + ("[]" if statement.is_array else "")
+        self._invalidate_reads("var", statement.name)
         value = (self._expression(statement.value) if statement.value is not None
                  else Value(literal=vextypes.zero(vex_type), type=vex_type))
         # `matrix3 m = ident();` asks for a 3x3 from a function that returns 4x4.
@@ -534,6 +544,7 @@ class Importer:
             node = self.graph.add("attrib_set", self._name("set"),
                                   attrib=statement.target.name, type=vex_type)
             self._feed(node.id, "value", self._expression(value))
+            self._invalidate_reads("attr", statement.target.name)
             return node.id
 
         if isinstance(statement.target, Name):
@@ -543,6 +554,7 @@ class Importer:
             node = self.graph.add("var_set", self._name("set"), name=name,
                                   type=self.variables[name])
             self._feed(node.id, "value", self._expression(value))
+            self._invalidate_reads("var", name)
             return node.id
 
         if isinstance(statement.target, Member):
@@ -589,7 +601,22 @@ class Importer:
             node = self.graph.add("var_set", self._name("set"), name=name,
                                   type=self.variables[name])
         self._feed(node.id, "value", rebuilt)
+        if isinstance(target.target, Attribute):
+            self._invalidate_reads("attr", target.target.name)
+        else:
+            self._invalidate_reads("var", target.target.name)
         return node.id
+
+    def _invalidate_reads(self, kind: str, name: str) -> None:
+        """A write starts a new epoch: reads after it get fresh nodes.
+
+        Without this, sharing read nodes would wire a consumer that runs after
+        the write to a read from before it - a graph that says something the
+        code does not.
+        """
+        for key in [k for k in self._read_cache
+                    if k[0] == kind and k[1] == name]:
+            del self._read_cache[key]
 
     def _call_statement(self, statement: ExprStatement) -> str:
         if not isinstance(statement.value, Call):
@@ -789,8 +816,13 @@ class Importer:
             if opinput and not expr.prefix:
                 return Value(literal=str(int(opinput.group(1)) - 1), type="int")
             vex_type = self._attribute_type(expr)
+            key = ("attr", expr.name, vex_type)
+            cached = self._read_cache.get(key)
+            if cached and cached[0] in self.graph.nodes:
+                return Value(node=cached[0], socket=cached[1], type=vex_type)
             node = self.graph.add("attrib_get", self._name("get"),
                                   attrib=expr.name, type=vex_type)
+            self._read_cache[key] = (node.id, "value")
             return Value(node=node.id, socket="value", type=vex_type)
 
         if isinstance(expr, Name):
@@ -811,8 +843,13 @@ class Importer:
                 raise Unsupported(f"{expr.name} was never declared here")
             self._read.add(expr.name)
             vex_type = self.variables[expr.name]
+            key = ("var", expr.name, vex_type)
+            cached = self._read_cache.get(key)
+            if cached and cached[0] in self.graph.nodes:
+                return Value(node=cached[0], socket=cached[1], type=vex_type)
             node = self.graph.add("var_get", self._name("read"),
                                   name=expr.name, type=vex_type)
+            self._read_cache[key] = (node.id, "value")
             return Value(node=node.id, socket="value", type=vex_type)
 
         if isinstance(expr, Cast):
@@ -1047,6 +1084,7 @@ class Importer:
                 self._cursor = (node.id, "exec")
 
         for name, out_socket in setters:
+            self._invalidate_reads("var", name)
             setter = self.graph.add("var_set", self._name("set"),
                                     name=name, type=self.variables[name])
             out_type = self.graph.socket_type(node.id, out_socket,
@@ -1158,6 +1196,7 @@ class Importer:
 
     def _alias(self, name: str, node_id: str, socket: str) -> None:
         """Point a variable name at a node's output instead of a variable."""
+        self._invalidate_reads("var", name)
         # Ask the graph, not the definition: on a polymorphic node the
         # definition still says "any", and recording that as the variable's type
         # makes every later use of it untypeable.
