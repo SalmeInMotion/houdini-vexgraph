@@ -168,6 +168,28 @@ class Jump(Statement):
 
 
 @dataclass
+class Param:
+    """One parameter of a user-defined function."""
+    type: str = ""
+    name: str = ""
+    is_array: bool = False
+
+
+@dataclass
+class FunctionDef(Statement):
+    name: str = ""
+    return_type: str = "void"
+    returns_array: bool = False
+    params: list[Param] = field(default_factory=list)
+    body: list[Statement] = field(default_factory=list)
+
+
+@dataclass
+class Return(Statement):
+    value: Expr | None = None
+
+
+@dataclass
 class Raw(Statement):
     """Something the parser could read but the grammar here does not model."""
     text: str = ""
@@ -290,8 +312,22 @@ class Parser:
             self.advance()
             self.accept(Kind.PUNCT, ";")
             return Jump(start, self.tokens[self.position - 1].end, word=token.text)
+        if token.is_(Kind.KEYWORD, "return"):
+            self.advance()
+            value = None
+            if not self.current.is_(Kind.PUNCT, ";"):
+                value = self.expression()
+            self.expect(Kind.PUNCT, ";")
+            return Return(start, self.tokens[self.position - 1].end, value=value)
+        if token.is_(Kind.KEYWORD, "function"):
+            # `function int foo(...)` - the keyword is optional noise; the
+            # declaration underneath is what matters.
+            self.advance()
+            if self.current.kind is Kind.TYPE:
+                return self.declaration(start)
+            return self.raw_from(start)
         if token.kind is Kind.KEYWORD:
-            # `do`, `return`, `function`, `struct` — readable, not modellable.
+            # `do`, `struct` — readable, not modellable.
             return self.raw_statement()
         if token.kind is Kind.TYPE:
             return self.declaration()
@@ -314,8 +350,8 @@ class Parser:
             return self.block().body
         return [self.statement(), *self._drain()]
 
-    def declaration(self) -> Statement:
-        start = self.current.start
+    def declaration(self, start: int | None = None) -> Statement:
+        start = self.current.start if start is None else start
         type_name = self.expect(Kind.TYPE).text
 
         # `vector[] name` and `vector name[]` both occur; VEX only accepts the
@@ -328,6 +364,13 @@ class Parser:
 
         if self.current.kind is not Kind.NAME:
             return self.raw_from(start)
+
+        # `int drawLine(vector f; vector t) { ... }` - a type, a name and an
+        # opening paren is a function definition; nothing else in VEX starts
+        # that way (a declaration would have `=`, `,` or `;` after the name).
+        if (self.position + 1 < len(self.tokens)
+                and self.tokens[self.position + 1].is_(Kind.PUNCT, "(")):
+            return self.function_definition(start, type_name, is_array)
 
         # `vector t, tc, bt;` declares three variables. This used to be handed
         # back as one Raw statement, which cost far more than the line itself:
@@ -360,6 +403,54 @@ class Parser:
                       for name, value, array in declared]
         self._pending.extend(statements[1:])
         return statements[0]
+
+    def function_definition(self, start: int, return_type: str,
+                            returns_array: bool) -> Statement:
+        """`int drawLine(vector f; vector t) { ... }`.
+
+        Anything this grammar does not cover (defaults, exports, structs)
+        falls back to one Raw statement covering the whole definition, which
+        is the importer's cue to keep it verbatim.
+        """
+        mark = self.position
+        name = self.advance().text
+        self.expect(Kind.PUNCT, "(")
+
+        params: list[Param] = []
+        try:
+            while not self.current.is_(Kind.PUNCT, ")"):
+                if self.current.kind is not Kind.TYPE:
+                    raise ParseError("expected a parameter type", self.current)
+                p_type = self.advance().text
+                p_array = False
+                if self.current.is_(Kind.PUNCT, "["):
+                    self.advance()
+                    self.expect(Kind.PUNCT, "]")
+                    p_array = True
+                if self.current.kind is not Kind.NAME:
+                    raise ParseError("expected a parameter name", self.current)
+                p_name = self.advance().text
+                if self.current.is_(Kind.PUNCT, "["):
+                    self.advance()
+                    self.expect(Kind.PUNCT, "]")
+                    p_array = True
+                params.append(Param(type=p_type, name=p_name, is_array=p_array))
+                # VEX separates parameters with `;`; `,` appears in the wild.
+                if not (self.accept(Kind.PUNCT, ";")
+                        or self.accept(Kind.PUNCT, ",")):
+                    break
+            self.expect(Kind.PUNCT, ")")
+            if not self.current.is_(Kind.PUNCT, "{"):
+                raise ParseError("expected a function body", self.current)
+            body = self.block().body
+        except ParseError:
+            self.position = mark
+            return self.raw_from(start)
+
+        return FunctionDef(start, self.tokens[self.position - 1].end,
+                           name=name, return_type=return_type,
+                           returns_array=returns_array,
+                           params=params, body=body)
 
     def if_statement(self) -> Statement:
         start = self.expect(Kind.KEYWORD, "if").start

@@ -78,6 +78,55 @@ class Link:
         return out
 
 
+@dataclass
+class FunctionSignature:
+    """What a user-defined function looks like from the outside."""
+    name: str
+    return_type: str = "void"
+    returns_array: bool = False
+    params: list[tuple[str, str, bool]] = field(default_factory=list)
+    #        (vex type, name, is_array)
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "return": self.return_type,
+                "returns_array": self.returns_array,
+                "params": [list(p) for p in self.params]}
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "FunctionSignature":
+        return cls(name=raw["name"], return_type=raw.get("return", "void"),
+                   returns_array=bool(raw.get("returns_array", False)),
+                   params=[(p[0], p[1], bool(p[2])) for p in raw.get("params", ())])
+
+
+def function_call_def(signature: FunctionSignature) -> NodeDef:
+    """The node a call to this function appears as.
+
+    Document-local: it lives on the graph, never in the shared registry, so
+    two documents defining different drawLine() functions cannot see each
+    other's. A call is a statement (the function may do anything), with one
+    input per parameter and the return value as its output.
+    """
+    from .nodedefs import SocketDef      # local to dodge a cycle at import
+    inputs = tuple(SocketDef(name, f"{vex_type}[]" if is_array else vex_type)
+                   for vex_type, name, is_array in signature.params)
+    args = ", ".join("{%s}" % name for _, name, _ in signature.params)
+    if signature.return_type == "void":
+        outputs: tuple = ()
+        code = f"{signature.name}({args});"
+    else:
+        result = signature.return_type + ("[]" if signature.returns_array else "")
+        outputs = (SocketDef("result", result),)
+        code = (f"{vextypes.declaration(result, '{result}')}"
+                f" = {signature.name}({args});")
+    return NodeDef(
+        type=f"fn_{signature.name}", label=f"{signature.name}()",
+        category="Functions", kind="statement",
+        summary=f"Calls the {signature.name}() function defined in this graph.",
+        inputs=inputs, outputs=outputs, code=code,
+        tags=("function", "call", signature.name))
+
+
 class Graph:
     def __init__(self, registry: Registry, *, run_over: str = "points",
                  name: str = "") -> None:
@@ -90,12 +139,26 @@ class Graph:
         self.name = name
         self.nodes: dict[str, Node] = {}
         self.links: list[Link] = []
+        # User-defined functions: each is a whole Graph of its own, carrying
+        # its signature, plus a document-local node definition so calls can
+        # appear on this canvas as ordinary nodes.
+        self.functions: dict[str, Graph] = {}
+        self.local_defs: dict[str, NodeDef] = {}
+        self.signature: FunctionSignature | None = None   # set on inner graphs
         self._counter = 0
+
+    def define_function(self, inner: "Graph") -> None:
+        """Adopt an inner graph as this document's function."""
+        assert inner.signature is not None
+        self.functions[inner.signature.name] = inner
+        definition = function_call_def(inner.signature)
+        self.local_defs[definition.type] = definition
 
     # ------------------------------------------------------------- authoring
 
     def add(self, node_type: str, node_id: str = "", **params: str) -> Node:
-        self.registry.require(node_type)          # fail now, not at emit time
+        if node_type not in self.local_defs:
+            self.registry.require(node_type)      # fail now, not at emit time
         if not node_id:
             self._counter += 1
             node_id = f"{node_type}_{self._counter}"
@@ -135,7 +198,8 @@ class Graph:
 
     def definition(self, node: Node | str) -> NodeDef:
         node = self.nodes[node] if isinstance(node, str) else node
-        return self.registry.require(node.type)
+        local = self.local_defs.get(node.type)
+        return local if local is not None else self.registry.require(node.type)
 
     def param_value(self, node: Node | str, name: str) -> str:
         """A node's setting, falling back to the definition's default.
@@ -386,6 +450,11 @@ class Graph:
         }
         if self.name:
             out["name"] = self.name
+        if self.signature is not None:
+            out["signature"] = self.signature.to_dict()
+        if self.functions:
+            out["functions"] = {name: inner.to_dict()
+                                for name, inner in self.functions.items()}
         return out
 
     def to_json(self, *, indent: int = 2) -> str:
@@ -418,6 +487,10 @@ class Graph:
                 to_node=entry["to"], to_socket=entry["in"],
                 is_exec=bool(entry.get("exec", False)),
             ))
+        if "signature" in raw:
+            graph.signature = FunctionSignature.from_dict(raw["signature"])
+        for inner_raw in raw.get("functions", {}).values():
+            graph.define_function(cls.from_dict(inner_raw, registry))
         return graph
 
     @classmethod

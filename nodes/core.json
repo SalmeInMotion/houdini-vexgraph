@@ -195,6 +195,50 @@
    ]
   },
   {
+   "type": "return_value",
+   "label": "Return",
+   "tier": 2,
+   "kind": "statement",
+   "summary": "Hands a value back to whoever called this function. Only means something inside a function graph.",
+   "params": [
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4",
+      "string",
+      "matrix2",
+      "matrix3",
+      "matrix",
+      "dict"
+     ],
+     "retypes": [
+      "value"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "value",
+     "type": "any",
+     "label": "Value",
+     "default": "0"
+    }
+   ],
+   "code": "return {value};",
+   "tags": [
+    "return",
+    "function",
+    "result"
+   ]
+  },
+  {
    "type": "break_if",
    "label": "Stop Repeating If",
    "kind": "statement",

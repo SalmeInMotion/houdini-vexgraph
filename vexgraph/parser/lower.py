@@ -24,13 +24,13 @@ import re
 from dataclasses import dataclass, field
 
 from .. import vextypes
-from ..graph import Graph
+from ..graph import FunctionSignature, Graph
 from ..nodedefs import Registry
 from . import syntax
 from .syntax import (Assign, Attribute, Binary, Block, Call, Cast, Declare, Hscript,
-                     Expr, ExprStatement, ForEach, For, If, Index, Jump,
-                     Literal, Member, Name, Raw, Statement, Ternary, Unary,
-                     VectorLiteral, While)
+                     Expr, ExprStatement, ForEach, For, FunctionDef, If, Index,
+                     Jump, Literal, Member, Name, Raw, Return, Statement,
+                     Ternary, Unary, VectorLiteral, While)
 
 # Attributes a wrangle types for you. Needed to infer that `@P + @N` is a
 # vector add rather than a float one.
@@ -312,6 +312,18 @@ class Importer:
         # be created and never wired to run, which emitted references to
         # results that were never computed.
         self._cursor: tuple[str, str] = ("", "")
+        # User-defined functions seen so far: call name -> the Signature its
+        # calls lower through. The node definitions live on the graph itself
+        # (document-local), never in the shared registry.
+        self._local_functions: dict[str, Signature] = {}
+        # Set on the sub-importer lowering a function's body; it is what makes
+        # `return` mean something.
+        self._function_signature: FunctionSignature | None = None
+
+    def _require(self, node_type: str):
+        """A definition by type, seeing this document's functions too."""
+        local = self.graph.local_defs.get(node_type)
+        return local if local is not None else self.registry.require(node_type)
 
     # ------------------------------------------------------------- driving
 
@@ -524,6 +536,10 @@ class Importer:
             return node.id
         if isinstance(statement, While):
             return self._while(statement)
+        if isinstance(statement, FunctionDef):
+            return self._function(statement)
+        if isinstance(statement, Return):
+            return self._return(statement)
         if isinstance(statement, Block) and not statement.body:
             self.report.total -= 1              # a bare `;` is not a statement
             return ""
@@ -679,7 +695,7 @@ class Importer:
         # A call written as a statement may still land on a pure value node -
         # `rotate(m, ...)` becomes "the rotated matrix". Those have no exec pin,
         # so returning them here would try to wire them into the run order.
-        if not self.registry.require(self.graph.nodes[placed].type).has_exec:
+        if not self._require(self.graph.nodes[placed].type).has_exec:
             self.report.total -= 1
             return ""
         return placed
@@ -757,6 +773,62 @@ class Importer:
                                right=Literal(text="1", kind="int"))
         return setup.name, setup.value.text, limit
 
+    def _function(self, statement: FunctionDef) -> str:
+        """A user-defined function becomes a whole graph of its own.
+
+        The body is lowered by a fresh importer whose variables start as the
+        parameters, into an inner Graph that carries the signature. Calls
+        then go through a document-local node definition - one input per
+        parameter, the return value as output - so `drawLine(a, b)` is a
+        node like any other. VOP solves the same problem with subnets; this
+        is that idea, minus the pretence that a function is geometry flow.
+        """
+        signature = FunctionSignature(
+            name=statement.name, return_type=statement.return_type,
+            returns_array=statement.returns_array,
+            params=[(p.type, p.name, p.is_array) for p in statement.params])
+
+        inner = Graph(self.registry, name=statement.name)
+        inner.signature = signature
+        # Functions defined earlier are callable from this body, the same as
+        # in the original code, so the body's importer inherits them.
+        inner.local_defs.update(self.graph.local_defs)
+        sub = Importer(self.registry, self.source)
+        sub.graph = inner
+        sub.report = Report(inner)
+        sub._function_signature = signature
+        sub._local_functions = dict(self._local_functions)
+        for vex_type, name, is_array in signature.params:
+            sub.variables[name] = f"{vex_type}[]" if is_array else vex_type
+            sub._declared_depth[name] = 0
+        sub.run(statement.body)
+
+        # The caller's health includes the function's: a body that fell back
+        # to inline text is still inline text in this document.
+        self.report.total += sub.report.total
+        self.report.inlined += sub.report.inlined
+        self.report.reasons += sub.report.reasons
+
+        self.graph.define_function(inner)
+        self._local_functions[statement.name] = Signature(
+            node_type=f"fn_{statement.name}",
+            slots=tuple(Slot("in", p.name) for p in statement.params),
+            result="result" if statement.return_type != "void" else "")
+        self.report.total -= 1     # the definition itself never "runs"
+        return ""
+
+    def _return(self, statement: Return) -> str:
+        if self._function_signature is None or statement.value is None:
+            raise Unsupported("return stays as written here")
+        signature = self._function_signature
+        if signature.returns_array:
+            raise Unsupported("returning a whole list stays as written")
+        node = self.graph.add("return_value", self._name("return"),
+                              type=signature.return_type)
+        value = self._expression(statement.value)
+        self._feed(node.id, "value", value)
+        return node.id
+
     def _while(self, statement: While) -> str:
         """A while is safe to model because reads render by reference.
 
@@ -801,7 +873,7 @@ class Importer:
             if node_id in seen:
                 return True
             seen.add(node_id)
-            definition = self.registry.require(self.graph.nodes[node_id].type)
+            definition = self._require(self.graph.nodes[node_id].type)
             if definition.builtin in ("attrib_get", "var_get", "split_vector"):
                 return True             # emitted as a reference at each use
             if definition.kind == "scope":
@@ -1075,7 +1147,7 @@ class Importer:
         if node_type is None:
             raise Unsupported(f"no node implements {op!r}")
 
-        definition = self.registry.require(node_type)
+        definition = self._require(node_type)
         node = self.graph.add(node_type, self._name("op"))
 
         # Polymorphic nodes (Add, Multiply) carry a Type setting that has to
@@ -1105,6 +1177,11 @@ class Importer:
         polymorphic socket beats a widening; anything the wiring could not
         serve disqualifies. Ties keep tier order, so curated nodes still win.
         """
+        # A function defined in this document wins outright: its name is not
+        # in any index, and there is exactly one of it.
+        local = self._local_functions.get(expr.name)
+        if local is not None and len(local.slots) == len(expr.args):
+            return local
         candidates = self.index.call(expr.name, len(expr.args))
         if not candidates:
             return None
@@ -1118,7 +1195,7 @@ class Importer:
 
         best, best_score = None, -1
         for signature in candidates:
-            definition = self.registry.require(signature.node_type)
+            definition = self._require(signature.node_type)
             score, fits = 0, True
             for slot, argument in zip(signature.slots, expr.args):
                 if slot.kind == "in":
@@ -1189,7 +1266,7 @@ class Importer:
         slot becomes "0" - one refuses to compile, the other compiles into a
         different meaning. Neither can be repaired downstream.
         """
-        definition = self.registry.require(signature.node_type)
+        definition = self._require(signature.node_type)
         for slot, argument in zip(signature.slots, expr.args):
             if not isinstance(argument, Literal):
                 continue
@@ -1219,7 +1296,7 @@ class Importer:
 
     def _place_call(self, signature, expr: Call, *,
                     chained_by_caller: bool = False) -> Value:
-        definition = self.registry.require(signature.node_type)
+        definition = self._require(signature.node_type)
         node = self.graph.add(signature.node_type,
                               self._name(signature.node_type.replace("vex_", "")))
         # (variable, output socket) pairs that must become Set Variable nodes
@@ -1356,7 +1433,7 @@ class Importer:
         node = self.graph.nodes.get(node_id)
         if node is None:
             return False
-        definition = self.registry.require(node.type)
+        definition = self._require(node.type)
         if self.graph.socket_type(node_id, socket, is_input=False) == wanted:
             return True
         setting = definition.param("type")
@@ -1490,7 +1567,7 @@ class Importer:
         if isinstance(expr, Call):
             signature = self._choose_signature(expr)
             if signature is not None and signature.result:
-                definition = self.registry.require(signature.node_type)
+                definition = self._require(signature.node_type)
                 socket = definition.output(signature.result)
                 if socket:
                     if socket.type in (vextypes.ANY, vextypes.ANY_ARRAY):

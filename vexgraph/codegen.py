@@ -213,20 +213,58 @@ class Emitter:
     # ---------------------------------------------------------------- public
 
     def emit(self) -> Emission:
-        self.issues += self.graph.validate()
+        lines = [Line(HEADER)]
+        for inner in self.graph.functions.values():
+            lines += self._emit_function(inner)
+        lines += self.emit_body()
         if any(i.severity == ERROR for i in self.issues):
             return Emission("", {}, self.issues)
-
-        entries = self.graph.entry_nodes()
-        self._build_scopes(entries[0].id)
-        self._place_pure_nodes()
-        self._check_loop_only_nodes()
-
-        lines = [Line(HEADER)] + self._emit_scope(self.root)
         code = "\n".join(l.text for l in lines) + "\n"
         line_nodes = {i: l.node_id for i, l in enumerate(lines, start=1)
                       if l.node_id}
         return Emission(code, line_nodes, self.issues)
+
+    def emit_body(self) -> list[Line]:
+        """This graph's statements as lines, without header or functions."""
+        self.issues += self.graph.validate()
+        if any(i.severity == ERROR for i in self.issues):
+            return []
+        # A function's own name is not a free identifier: naming the call's
+        # result after it emits `vector f = f(...)`, which vcc tolerates and
+        # every reader trips over.
+        self.names.used.update(self.graph.functions)
+        for definition in self.graph.local_defs.values():
+            self.names.used.add(definition.label.rstrip("()"))
+        signature = self.graph.signature
+        if signature is not None:
+            # Parameters exist before the first statement runs, under their
+            # own names - the emitted header declares them, so nothing may
+            # reuse or re-declare those names inside.
+            for vex_type, name, is_array in signature.params:
+                full = f"{vex_type}[]" if is_array else vex_type
+                self.variables[name] = (name, full, self.root)
+                self.names.used.add(name)
+        entries = self.graph.entry_nodes()
+        self._build_scopes(entries[0].id)
+        self._place_pure_nodes()
+        self._check_loop_only_nodes()
+        return self._emit_scope(self.root)
+
+    def _emit_function(self, inner: Graph) -> list[Line]:
+        """One user-defined function, rendered from its own graph."""
+        sub = Emitter(inner)
+        body = sub.emit_body()
+        self.issues += sub.issues
+        signature = inner.signature
+        params = "; ".join(
+            f"{t} {n}" + ("[]" if is_array else "")
+            for t, n, is_array in signature.params)
+        returns = signature.return_type + ("[]" if signature.returns_array else "")
+        lines = [Line(f"{returns} {signature.name}({params})"), Line("{")]
+        lines += [Line(f"    {l.text}" if l.text else "", l.node_id)
+                  for l in body]
+        lines.append(Line("}"))
+        return lines
 
     # ------------------------------------------------------------- structure
 

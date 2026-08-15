@@ -638,3 +638,44 @@ def test_setpointattrib_takes_any_value_type(registry):
         'setpointattrib(0, "N", pt, normalize(-@P));', registry)
     assert report.inlined == 0
     assert 'setpointattrib(0, "N", add_point, normalize(-@P));' in code
+
+
+# ------------------------------------------------------------ user functions
+
+def test_a_user_function_becomes_its_own_graph(registry):
+    """The definition lowers into an inner graph carrying its signature, and
+    the call is an ordinary node made from a document-local definition."""
+    code, report = imported(
+        "int twice(int a){\n    return a * 2;\n}\n"
+        "i@out = twice(@ptnum);", registry)
+    assert report.inlined == 0
+    assert "int twice(int a)" in code
+    assert "twice(@ptnum)" in code
+    inner = report.graph.functions["twice"]
+    assert any(n.type == "return_value" for n in inner.nodes.values())
+    assert any(n.type == "fn_twice" for n in report.graph.nodes.values())
+
+
+def test_functions_can_call_earlier_functions(registry):
+    code, report = imported(
+        "int twice(int a){ return a * 2; }\n"
+        "int quad(int a){ return twice(twice(a)); }\n"
+        "i@out = quad(@ptnum);", registry)
+    assert report.inlined == 0
+    inner = report.graph.functions["quad"]
+    assert any(n.type == "fn_twice" for n in inner.nodes.values())
+
+
+def test_return_at_wrangle_level_stays_verbatim(registry):
+    """`return;` ends the element early - legal in a wrangle, but it belongs
+    to no function, so it keeps its original spelling."""
+    code, report = imported("if (@ptnum == 0) { return; }\n@P.y = 1;", registry)
+    assert report.inlined == 1
+    assert "return;" in code
+
+
+def test_functions_survive_saving(registry):
+    _, report = imported(
+        "int twice(int a){ return a * 2; }\ni@out = twice(3);", registry)
+    clone = Graph.from_dict(report.graph.to_dict(), registry)
+    assert generate(clone).code == generate(report.graph).code
