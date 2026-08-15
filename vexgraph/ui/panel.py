@@ -115,6 +115,9 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.graph = graph or self._starter_graph()
         self.path: Path | None = None
         self._search: NodeSearch | None = None
+        # Name of the user-defined function whose graph the canvas currently
+        # shows; "" means the main graph.
+        self._open_function = ""
         # Which sections were folded away last time. Small enough to belong in
         # the platform's own settings rather than a file of our own.
         self._settings = QtCore.QSettings("VEXgraph", "VEXgraph")
@@ -325,9 +328,31 @@ class VexGraphEditor(QtWidgets.QWidget):
             shrinkable.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
                                      QtWidgets.QSizePolicy.Policy.Ignored)
 
+        # The canvas column: a thin breadcrumb bar appears above the view
+        # while a function's graph is open, and is the way back out of it.
+        canvas_column = QtWidgets.QWidget()
+        canvas_layout = QtWidgets.QVBoxLayout(canvas_column)
+        canvas_layout.setContentsMargins(0, 0, 0, 0)
+        canvas_layout.setSpacing(0)
+        self.crumb_bar = QtWidgets.QWidget()
+        crumb_layout = QtWidgets.QHBoxLayout(self.crumb_bar)
+        crumb_layout.setContentsMargins(8, 4, 8, 4)
+        crumb_layout.setSpacing(8)
+        back = QtWidgets.QPushButton("◀ Main graph")
+        back.setToolTip("Leave this function and return to the graph that "
+                        "calls it")
+        back.clicked.connect(self.leave_function)
+        crumb_layout.addWidget(back)
+        self.crumb_label = QtWidgets.QLabel("")
+        crumb_layout.addWidget(self.crumb_label)
+        crumb_layout.addStretch(1)
+        self.crumb_bar.setVisible(False)
+        canvas_layout.addWidget(self.crumb_bar)
+        canvas_layout.addWidget(self.view, 1)
+
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         splitter.addWidget(self.browser)
-        splitter.addWidget(self.view)
+        splitter.addWidget(canvas_column)
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 3)
@@ -753,8 +778,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         self._restoring = True
         try:
             self.graph = Graph.from_dict(state, self.registry)
-            self.scene.graph = self.graph
-            self.scene.reload()
+            self._show_scene()
             self.run_over.setCurrentText(self.graph.run_over)
             self.assistant.set_graph(self.graph)
             self._regenerate()
@@ -770,6 +794,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.scene.selectionChanged.connect(self._sync_highlight)
         self.view.node_search_requested.connect(self._search_at)
         self.view.help_requested.connect(self.open_help_for)
+        self.view.function_opened.connect(self.enter_function)
         self.code.line_clicked.connect(self._select_from_code)
         self.code.edited.connect(self._code_edited)
         self.code.commit_requested.connect(self.build_from_code)
@@ -952,6 +977,39 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.graph = graph
         self._rebind()
 
+    # -------------------------------------------------- function navigation
+
+    def enter_function(self, name: str) -> None:
+        """Show a user-defined function's own graph on the canvas."""
+        if name not in self.graph.functions:
+            return
+        self._open_function = name
+        self._show_scene()
+
+    def leave_function(self) -> None:
+        self._open_function = ""
+        self._show_scene()
+
+    def _show_scene(self) -> None:
+        """Point the canvas at the open function, or at the main graph.
+
+        One scene, rebound - the same mechanism undo uses - so every signal
+        connection and shortcut keeps working wherever the user is standing.
+        """
+        inner = self.graph.functions.get(self._open_function)
+        if inner is None:
+            self._open_function = ""
+        shown = inner if inner is not None else self.graph
+        self.scene.graph = shown
+        self.scene.reload()
+        self.view.frame_all()
+        self.crumb_bar.setVisible(inner is not None)
+        if inner is not None and inner.signature is not None:
+            signature = inner.signature
+            params = "; ".join(f"{t} {n}" for t, n, _ in signature.params)
+            self.crumb_label.setText(
+                f"{signature.return_type} {signature.name}({params})")
+
     def _rebind(self) -> None:
         # Replacing the whole graph (opening a file, importing VEX, keeping a
         # proposal) starts a new history rather than appending to the old one:
@@ -960,8 +1018,9 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.history.reset(self.graph.to_dict())
         self._last_emission = None
         self._applied_code = ""
-        self.scene.graph = self.graph
-        self.scene.reload()
+        # A function that survived the swap stays open; the scene re-resolves
+        # it by name, because the new document is a different object tree.
+        self._show_scene()
         self.run_over.setCurrentText(self.graph.run_over)
         # The assistant needs the current graph to answer "change this" requests.
         self.assistant.set_graph(self.graph)

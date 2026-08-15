@@ -651,6 +651,7 @@ def _owning_node(item) -> NodeItem | None:
 class GraphView(QtWidgets.QGraphicsView):
     node_search_requested = QtCore.Signal(QtCore.QPointF, object)
     help_requested = QtCore.Signal(str)          # node type
+    function_opened = QtCore.Signal(str)         # user-function name
 
     def __init__(self, scene: GraphScene, parent=None):
         super().__init__(scene, parent)
@@ -837,12 +838,17 @@ class GraphView(QtWidgets.QGraphicsView):
             return
 
         # Double-clicking a node opens Houdini's page for the function behind
-        # it. Rows keep their own double-click (they open an editor), so this
-        # only fires on the body and title.
+        # it - except a call to a function defined in this document, which
+        # opens that function's own graph instead. Rows keep their own
+        # double-click (they open an editor), so this only fires on the body
+        # and title.
         if not isinstance(item, RowItem):
             node = _owning_node(item)
             if node is not None:
-                self.help_requested.emit(node.node.type)
+                if node.node.type.startswith("fn_"):
+                    self.function_opened.emit(node.node.type[3:])
+                else:
+                    self.help_requested.emit(node.node.type)
                 event.accept()
                 return
         super().mouseDoubleClickEvent(event)

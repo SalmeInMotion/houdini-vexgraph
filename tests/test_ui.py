@@ -1298,3 +1298,50 @@ def test_expanding_an_output_shows_every_component(app, registry):
     item.expanded_outputs.add("value")
     item.rebuild()
     assert all(("value." + c, False) in item.ports for c in "xyz")
+
+
+# ---------------------------------------------------------- function graphs
+
+def _editor_with_function(editor):
+    editor.code.setPlainText(
+        "int twice(int a){ return a * 2; }\ni@out = twice(@ptnum);")
+    editor.build_from_code()
+    assert "twice" in editor.graph.functions
+    return editor
+
+
+def test_opening_a_call_shows_the_functions_own_graph(editor):
+    """The double-click signal routes to the inner graph; the breadcrumb bar
+    appears and is the way back."""
+    _editor_with_function(editor)
+    editor.view.function_opened.emit("twice")
+    assert editor.scene.graph is editor.graph.functions["twice"]
+    assert not editor.crumb_bar.isHidden()
+    assert "twice" in editor.crumb_label.text()
+    types = {n.type for n in editor.scene.graph.nodes.values()}
+    assert "return_value" in types
+
+    editor.leave_function()
+    assert editor.scene.graph is editor.graph
+    assert editor.crumb_bar.isHidden()
+
+
+def test_the_code_pane_keeps_showing_the_whole_document(editor):
+    """Standing inside a function must not shrink the emitted code."""
+    _editor_with_function(editor)
+    editor.enter_function("twice")
+    editor._regenerate()
+    text = editor.code.toPlainText()
+    assert "int twice(int a)" in text
+    assert "twice(@ptnum)" in text
+
+
+def test_rebuilding_while_inside_a_vanished_function_returns_home(editor):
+    """Ctrl+Enter replaces the document; a function that no longer exists
+    cannot stay open, and coming home must not crash."""
+    _editor_with_function(editor)
+    editor.enter_function("twice")
+    editor.code.setPlainText("i@out = 3;")
+    editor.build_from_code()
+    assert editor.scene.graph is editor.graph
+    assert editor.crumb_bar.isHidden()
