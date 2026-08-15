@@ -1,1524 +1,1566 @@
 {
-  "category": "Maths",
-  "nodes": [
+ "category": "Maths",
+ "nodes": [
+  {
+   "type": "add",
+   "label": "Add",
+   "summary": "Adds two values together.",
+   "params": [
     {
-      "type": "add",
-      "label": "Add",
-      "summary": "Adds two values together.",
-      "params": [
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "float",
-          "menu": [
-            "float",
-            "int",
-            "vector",
-            "vector2",
-            "vector4"
-          ],
-          "retypes": [
-            "a",
-            "b",
-            "result"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "a",
-          "type": "any",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "any",
-          "label": "B",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "any",
-          "label": "Result"
-        }
-      ],
-      "expr": "{a} + {b}",
-      "tags": [
-        "plus",
-        "sum",
-        "+"
-      ]
-    },
-    {
-      "type": "subtract",
-      "label": "Subtract",
-      "summary": "Takes B away from A.",
-      "params": [
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "float",
-          "menu": [
-            "float",
-            "int",
-            "vector",
-            "vector2",
-            "vector4"
-          ],
-          "retypes": [
-            "a",
-            "b",
-            "result"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "a",
-          "type": "any",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "any",
-          "label": "B",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "any",
-          "label": "Result"
-        }
-      ],
-      "expr": "{a} - {b}",
-      "tags": [
-        "minus",
-        "difference",
-        "-"
-      ]
-    },
-    {
-      "type": "multiply",
-      "label": "Multiply",
-      "summary": "Multiplies two values of the same type.",
-      "params": [
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "float",
-          "menu": [
-            "float",
-            "int",
-            "vector",
-            "vector2",
-            "vector4"
-          ],
-          "retypes": [
-            "a",
-            "b",
-            "result"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "a",
-          "type": "any",
-          "label": "A",
-          "default": "1"
-        },
-        {
-          "name": "b",
-          "type": "any",
-          "label": "B",
-          "default": "1"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "any",
-          "label": "Result"
-        }
-      ],
-      "expr": "{a} * {b}",
-      "tags": [
-        "times",
-        "product",
-        "*"
-      ]
-    },
-    {
-      "type": "divide",
-      "label": "Divide",
-      "summary": "Divides A by B.",
-      "params": [
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "float",
-          "menu": [
-            "float",
-            "int",
-            "vector",
-            "vector2",
-            "vector4"
-          ],
-          "retypes": [
-            "a",
-            "b",
-            "result"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "a",
-          "type": "any",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "any",
-          "label": "B",
-          "default": "1"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "any",
-          "label": "Result"
-        }
-      ],
-      "expr": "{a} / {b}",
-      "tags": [
-        "quotient",
-        "over",
-        "/"
-      ]
-    },
-    {
-      "type": "modulo",
-      "label": "Remainder",
-      "summary": "What is left over after dividing A by B.",
-      "help": "Counting every other point is `Element Number` remainder 2 equals 0.",
-      "params": [
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "int",
-          "menu": [
-            "int",
-            "float"
-          ],
-          "retypes": [
-            "a",
-            "b",
-            "result"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "a",
-          "type": "any",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "any",
-          "label": "B",
-          "default": "2"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "any",
-          "label": "Result"
-        }
-      ],
-      "expr": "{a} % {b}",
-      "tags": [
-        "mod",
-        "modulo",
-        "remainder",
-        "%",
-        "every other",
-        "alternate"
-      ]
-    },
-    {
-      "type": "scale",
-      "label": "Scale",
-      "summary": "Multiplies a direction or position by a single number.",
-      "inputs": [
-        {
-          "name": "value",
-          "type": "vector",
-          "label": "Vector",
-          "default": "{0, 0, 0}"
-        },
-        {
-          "name": "amount",
-          "type": "float",
-          "label": "Amount",
-          "default": "1"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "vector",
-          "label": "Result"
-        }
-      ],
-      "expr": "{value} * {amount}",
-      "tags": [
-        "multiply",
-        "size",
-        "scale",
-        "shorten",
-        "lengthen"
-      ]
-    },
-    {
-      "type": "negate",
-      "label": "Negate",
-      "summary": "Flips the sign, so 3 becomes -3.",
-      "params": [
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "float",
-          "menu": [
-            "float",
-            "int",
-            "vector",
-            "vector2",
-            "vector4"
-          ],
-          "retypes": [
-            "value",
-            "result"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "value",
-          "type": "any",
-          "label": "Value",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "any",
-          "label": "Result"
-        }
-      ],
-      "expr": "-{value}",
-      "tags": [
-        "invert",
-        "flip",
-        "opposite",
-        "minus"
-      ]
-    },
-    {
-      "type": "length",
-      "label": "Length",
-      "summary": "How long a direction is, or how far a position is from the origin.",
-      "inputs": [
-        {
-          "name": "vector",
-          "type": "vector",
-          "label": "Vector",
-          "default": "{0, 0, 0}"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "length",
-          "type": "float",
-          "label": "Length"
-        }
-      ],
-      "expr": "length({vector})",
-      "tags": [
-        "magnitude",
-        "size",
-        "distance",
-        "how long"
-      ]
-    },
-    {
-      "type": "distance_between",
-      "label": "Distance Between",
-      "summary": "How far apart two positions are.",
-      "inputs": [
-        {
-          "name": "a",
-          "type": "vector",
-          "label": "From",
-          "default": "{0, 0, 0}"
-        },
-        {
-          "name": "b",
-          "type": "vector",
-          "label": "To",
-          "default": "{0, 0, 0}"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "distance",
-          "type": "float",
-          "label": "Distance"
-        }
-      ],
-      "expr": "distance({a}, {b})",
-      "tags": [
-        "far",
-        "apart",
-        "length",
-        "gap"
-      ]
-    },
-    {
-      "type": "normalize",
-      "label": "Normalize",
-      "summary": "Shrinks a direction to length 1, keeping which way it points.",
-      "inputs": [
-        {
-          "name": "vector",
-          "type": "vector",
-          "label": "Vector",
-          "default": "{0, 1, 0}"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "direction",
-          "type": "vector",
-          "label": "Direction"
-        }
-      ],
-      "expr": "normalize({vector})",
-      "tags": [
-        "unit",
-        "direction",
-        "unitise"
-      ]
-    },
-    {
-      "type": "dot_product",
-      "label": "Dot Product",
-      "summary": "How much two directions agree: 1 same way, 0 at right angles, -1 opposite.",
-      "inputs": [
-        {
-          "name": "a",
-          "type": "vector",
-          "label": "A",
-          "default": "{0, 1, 0}"
-        },
-        {
-          "name": "b",
-          "type": "vector",
-          "label": "B",
-          "default": "{0, 1, 0}"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "float",
-          "label": "Result"
-        }
-      ],
-      "expr": "dot({a}, {b})",
-      "tags": [
-        "dot",
-        "facing",
-        "angle",
-        "alignment"
-      ]
-    },
-    {
-      "type": "cross_product",
-      "label": "Cross Product",
-      "summary": "A direction at right angles to both inputs.",
-      "inputs": [
-        {
-          "name": "a",
-          "type": "vector",
-          "label": "A",
-          "default": "{1, 0, 0}"
-        },
-        {
-          "name": "b",
-          "type": "vector",
-          "label": "B",
-          "default": "{0, 1, 0}"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "vector",
-          "label": "Result"
-        }
-      ],
-      "expr": "cross({a}, {b})",
-      "tags": [
-        "cross",
-        "perpendicular",
-        "normal",
-        "right angle"
-      ]
-    },
-    {
-      "type": "make_vector",
-      "label": "Make Vector",
-      "summary": "Builds a vector from three separate numbers.",
-      "inputs": [
-        {
-          "name": "x",
-          "type": "float",
-          "label": "X",
-          "default": "0"
-        },
-        {
-          "name": "y",
-          "type": "float",
-          "label": "Y",
-          "default": "0"
-        },
-        {
-          "name": "z",
-          "type": "float",
-          "label": "Z",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "vector",
-          "label": "Vector"
-        }
-      ],
-      "expr": "set({x}, {y}, {z})",
-      "tags": [
-        "build",
-        "combine",
-        "xyz",
-        "pack"
-      ]
-    },
-    {
-      "type": "split_vector",
-      "label": "Split Vector",
-      "summary": "Pulls a vector apart into its three numbers.",
-      "inputs": [
-        {
-          "name": "vector",
-          "type": "vector",
-          "label": "Vector",
-          "default": "{0, 0, 0}"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "x",
-          "type": "float",
-          "label": "X"
-        },
-        {
-          "name": "y",
-          "type": "float",
-          "label": "Y"
-        },
-        {
-          "name": "z",
-          "type": "float",
-          "label": "Z"
-        }
-      ],
-      "tags": [
-        "unpack",
-        "components",
-        "xyz",
-        "separate"
-      ],
-      "builtin": "split_vector"
-    },
-    {
-      "type": "fit_range",
-      "label": "Fit Range",
-      "summary": "Remaps a number from one range onto another.",
-      "help": "Fitting 0-1 onto 2-5 turns 0 into 2, 0.5 into 3.5, and 1 into 5. Set To Type to vector to fade between two colours across the range.",
-      "params": [
-        {
-          "name": "type",
-          "label": "To Type",
-          "kind": "menu",
-          "default": "float",
-          "menu": [
-            "float",
-            "vector",
-            "vector2",
-            "vector4"
-          ],
-          "retypes": [
-            "new_min",
-            "new_max",
-            "result"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "value",
-          "type": "float",
-          "label": "Value",
-          "default": "0"
-        },
-        {
-          "name": "old_min",
-          "type": "float",
-          "label": "From Min",
-          "default": "0"
-        },
-        {
-          "name": "old_max",
-          "type": "float",
-          "label": "From Max",
-          "default": "1"
-        },
-        {
-          "name": "new_min",
-          "type": "any",
-          "label": "To Min",
-          "default": "0"
-        },
-        {
-          "name": "new_max",
-          "type": "any",
-          "label": "To Max",
-          "default": "1"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "any",
-          "label": "Result"
-        }
-      ],
-      "expr": "fit({value}, {old_min}, {old_max}, {new_min}, {new_max})",
-      "tags": [
-        "remap",
-        "range",
-        "rescale",
-        "map",
-        "fit"
-      ]
-    },
-    {
-      "type": "clamp_value",
-      "label": "Clamp",
-      "summary": "Keeps a number inside a minimum and maximum.",
-      "inputs": [
-        {
-          "name": "value",
-          "type": "float",
-          "label": "Value",
-          "default": "0"
-        },
-        {
-          "name": "minimum",
-          "type": "float",
-          "label": "Minimum",
-          "default": "0"
-        },
-        {
-          "name": "maximum",
-          "type": "float",
-          "label": "Maximum",
-          "default": "1"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "float",
-          "label": "Result"
-        }
-      ],
-      "expr": "clamp({value}, {minimum}, {maximum})",
-      "tags": [
-        "limit",
-        "min",
-        "max",
-        "bound",
-        "constrain"
-      ]
-    },
-    {
-      "type": "blend",
-      "label": "Blend",
-      "summary": "Mixes between two values. 0 gives A, 1 gives B.",
-      "params": [
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "float",
-          "menu": [
-            "float",
-            "vector",
-            "vector2",
-            "vector4"
-          ],
-          "retypes": [
-            "a",
-            "b",
-            "result"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "a",
-          "type": "any",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "any",
-          "label": "B",
-          "default": "1"
-        },
-        {
-          "name": "amount",
-          "type": "float",
-          "label": "Amount",
-          "default": "0.5"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "any",
-          "label": "Result"
-        }
-      ],
-      "expr": "lerp({a}, {b}, {amount})",
-      "tags": [
-        "lerp",
-        "mix",
-        "interpolate",
-        "between"
-      ]
-    },
-    {
-      "type": "absolute",
-      "label": "Absolute",
-      "summary": "Drops the sign, so -3 becomes 3.",
-      "inputs": [
-        {
-          "name": "value",
-          "type": "float",
-          "label": "Value",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "float",
-          "label": "Result"
-        }
-      ],
-      "expr": "abs({value})",
-      "tags": [
-        "abs",
-        "positive",
-        "magnitude"
-      ]
-    },
-    {
-      "type": "power",
-      "label": "Power",
-      "summary": "Raises a number to a power.",
-      "inputs": [
-        {
-          "name": "value",
-          "type": "float",
-          "label": "Value",
-          "default": "1"
-        },
-        {
-          "name": "exponent",
-          "type": "float",
-          "label": "Power",
-          "default": "2"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "float",
-          "label": "Result"
-        }
-      ],
-      "expr": "pow({value}, {exponent})",
-      "tags": [
-        "pow",
-        "exponent",
-        "squared",
-        "cubed"
-      ]
-    },
-    {
-      "type": "square_root",
-      "label": "Square Root",
-      "inputs": [
-        {
-          "name": "value",
-          "type": "float",
-          "label": "Value",
-          "default": "1"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "float",
-          "label": "Result"
-        }
-      ],
-      "expr": "sqrt({value})",
-      "tags": [
-        "sqrt",
-        "root"
-      ]
-    },
-    {
-      "type": "sine",
-      "label": "Sine",
-      "summary": "Sine of an angle in radians. Useful for waves.",
-      "inputs": [
-        {
-          "name": "value",
-          "type": "float",
-          "label": "Angle",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "float",
-          "label": "Result"
-        }
-      ],
-      "expr": "sin({value})",
-      "tags": [
-        "sin",
-        "wave",
-        "oscillate",
-        "trig"
-      ]
-    },
-    {
-      "type": "cosine",
-      "label": "Cosine",
-      "summary": "Cosine of an angle in radians.",
-      "inputs": [
-        {
-          "name": "value",
-          "type": "float",
-          "label": "Angle",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "float",
-          "label": "Result"
-        }
-      ],
-      "expr": "cos({value})",
-      "tags": [
-        "cos",
-        "wave",
-        "trig"
-      ]
-    },
-    {
-      "type": "smallest",
-      "label": "Smallest",
-      "summary": "The smaller of two numbers.",
-      "inputs": [
-        {
-          "name": "a",
-          "type": "float",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "float",
-          "label": "B",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "float",
-          "label": "Result"
-        }
-      ],
-      "expr": "min({a}, {b})",
-      "tags": [
-        "min",
-        "minimum",
-        "lower"
-      ]
-    },
-    {
-      "type": "largest",
-      "label": "Largest",
-      "summary": "The larger of two numbers.",
-      "inputs": [
-        {
-          "name": "a",
-          "type": "float",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "float",
-          "label": "B",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "float",
-          "label": "Result"
-        }
-      ],
-      "expr": "max({a}, {b})",
-      "tags": [
-        "max",
-        "maximum",
-        "higher"
-      ]
-    },
-    {
-      "type": "round_to_int",
-      "label": "Round To Whole",
-      "summary": "Turns a number with decimals into a whole number.",
-      "params": [
-        {
-          "name": "mode",
-          "label": "Direction",
-          "kind": "menu",
-          "default": "rint",
-          "menu": [
-            "rint",
-            "floor",
-            "ceil",
-            "trunc"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "value",
-          "type": "float",
-          "label": "Value",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "int",
-          "label": "Whole Number"
-        }
-      ],
-      "code": "int {result} = int({mode}({value}));",
-      "tags": [
-        "int",
-        "integer",
-        "floor",
-        "ceil",
-        "round",
-        "truncate",
-        "whole"
-      ]
-    },
-    {
-      "type": "random_number",
-      "category": "Random",
-      "label": "Random Number",
-      "summary": "A repeatable random number between 0 and 1.",
-      "help": "The same seed always gives the same number, which is what makes a render stable. Feed it the element number for a different value per point.",
-      "inputs": [
-        {
-          "name": "seed",
-          "type": "float",
-          "label": "Seed",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "value",
-          "type": "float",
-          "label": "Value"
-        }
-      ],
-      "code": "float {value} = rand({seed});",
-      "tags": [
-        "rand",
-        "random",
-        "noise",
-        "vary",
-        "jitter"
-      ]
-    },
-    {
-      "type": "random_vector",
-      "category": "Random",
-      "label": "Random Vector",
-      "summary": "Three repeatable random numbers between 0 and 1.",
-      "inputs": [
-        {
-          "name": "seed",
-          "type": "float",
-          "label": "Seed",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "value",
-          "type": "vector",
-          "label": "Vector"
-        }
-      ],
-      "code": "vector {value} = rand({seed});",
-      "tags": [
-        "rand",
-        "random",
-        "direction",
-        "vary"
-      ]
-    },
-    {
-      "type": "noise_value",
-      "category": "Random",
-      "label": "Noise",
-      "summary": "Smooth random values that change gradually across space.",
-      "help": "Scale the position going in to control how big the pattern is: smaller numbers make it broader.",
-      "inputs": [
-        {
-          "name": "position",
-          "type": "vector",
-          "label": "Position",
-          "default": "{0, 0, 0}"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "value",
-          "type": "float",
-          "label": "Value"
-        }
-      ],
-      "code": "float {value} = noise({position});",
-      "tags": [
-        "noise",
-        "perlin",
-        "smooth",
-        "organic",
-        "pattern"
-      ]
-    },
-    {
-      "type": "is_greater",
-      "category": "Compare",
-      "label": "Is Greater Than",
-      "summary": "True when A is bigger than B.",
-      "inputs": [
-        {
-          "name": "a",
-          "type": "float",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "float",
-          "label": "B",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "int",
-          "label": "True/False"
-        }
-      ],
-      "expr": "{a} > {b}",
-      "tags": [
-        "compare",
-        "bigger",
-        "more",
-        "greater",
-        ">"
-      ]
-    },
-    {
-      "type": "is_less",
-      "category": "Compare",
-      "label": "Is Less Than",
-      "summary": "True when A is smaller than B.",
-      "inputs": [
-        {
-          "name": "a",
-          "type": "float",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "float",
-          "label": "B",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "int",
-          "label": "True/False"
-        }
-      ],
-      "expr": "{a} < {b}",
-      "tags": [
-        "compare",
-        "smaller",
-        "less",
-        "under",
-        "<"
-      ]
-    },
-    {
-      "type": "is_equal",
-      "category": "Compare",
-      "label": "Is Equal To",
-      "summary": "True when two whole numbers match.",
-      "help": "Comparing numbers with decimals for exact equality almost never works. Use Is Less Than on the difference instead.",
-      "inputs": [
-        {
-          "name": "a",
-          "type": "int",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "int",
-          "label": "B",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "int",
-          "label": "True/False"
-        }
-      ],
-      "expr": "{a} == {b}",
-      "tags": [
-        "compare",
-        "same",
-        "equal",
-        "match",
-        "=="
-      ]
-    },
-    {
-      "type": "is_not_equal",
-      "category": "Compare",
-      "label": "Is Not Equal To",
-      "summary": "True when the two values differ.",
-      "inputs": [
-        {
-          "name": "a",
-          "type": "float",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "float",
-          "label": "B",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "int",
-          "label": "True/False"
-        }
-      ],
-      "expr": "{a} != {b}",
-      "tags": [
-        "compare",
-        "different",
-        "not equal",
-        "!="
-      ]
-    },
-    {
-      "type": "is_greater_equal",
-      "category": "Compare",
-      "label": "Is Greater Or Equal",
-      "summary": "True when A is at least B.",
-      "inputs": [
-        {
-          "name": "a",
-          "type": "float",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "float",
-          "label": "B",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "int",
-          "label": "True/False"
-        }
-      ],
-      "expr": "{a} >= {b}",
-      "tags": [
-        "compare",
-        "at least",
-        ">="
-      ]
-    },
-    {
-      "type": "is_less_equal",
-      "category": "Compare",
-      "label": "Is Less Or Equal",
-      "summary": "True when A is at most B.",
-      "inputs": [
-        {
-          "name": "a",
-          "type": "float",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "float",
-          "label": "B",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "int",
-          "label": "True/False"
-        }
-      ],
-      "expr": "{a} <= {b}",
-      "tags": [
-        "compare",
-        "at most",
-        "<="
-      ]
-    },
-    {
-      "type": "both_true",
-      "category": "Compare",
-      "label": "Both True",
-      "summary": "True only when both inputs are true.",
-      "inputs": [
-        {
-          "name": "a",
-          "type": "int",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "int",
-          "label": "B",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "int",
-          "label": "True/False"
-        }
-      ],
-      "expr": "{a} && {b}",
-      "tags": [
-        "and",
-        "both",
-        "logic"
-      ]
-    },
-    {
-      "type": "either_true",
-      "category": "Compare",
-      "label": "Either True",
-      "summary": "True when at least one input is true.",
-      "inputs": [
-        {
-          "name": "a",
-          "type": "int",
-          "label": "A",
-          "default": "0"
-        },
-        {
-          "name": "b",
-          "type": "int",
-          "label": "B",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "int",
-          "label": "True/False"
-        }
-      ],
-      "expr": "{a} || {b}",
-      "tags": [
-        "or",
-        "either",
-        "logic"
-      ]
-    },
-    {
-      "type": "not_true",
-      "category": "Compare",
-      "label": "Not",
-      "summary": "Flips true to false and false to true.",
-      "inputs": [
-        {
-          "name": "value",
-          "type": "int",
-          "label": "True/False",
-          "default": "0"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "int",
-          "label": "True/False"
-        }
-      ],
-      "expr": "!{value}",
-      "tags": [
-        "not",
-        "invert",
-        "opposite",
-        "logic"
-      ]
-    },
-    {
-      "type": "transform_by_matrix",
-      "category": "Matrix",
-      "label": "Transform by Matrix",
-      "summary": "Moves, rotates or scales a vector using a matrix.",
-      "help": "A matrix packs a whole transform into one value. Feeding a position through one is how you rotate or scale points without touching each axis by hand. Use a matrix3 to rotate/scale a direction, or a matrix to also move a position.",
-      "params": [
-        {
-          "name": "type",
-          "label": "Matrix",
-          "kind": "menu",
-          "default": "matrix3",
-          "menu": [
-            "matrix3",
-            "matrix",
-            "matrix2"
-          ],
-          "retypes": [
-            "matrix"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "vector",
-          "type": "vector",
-          "label": "Vector",
-          "default": "{0, 0, 0}"
-        },
-        {
-          "name": "matrix",
-          "type": "any",
-          "label": "Matrix"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "vector",
-          "label": "Result"
-        }
-      ],
-      "expr": "{vector} * {matrix}",
-      "tags": [
-        "transform",
-        "matrix",
-        "rotate",
-        "multiply",
-        "xform",
-        "*"
-      ]
-    },
-    {
-      "type": "identity_matrix",
-      "category": "Matrix",
-      "label": "Identity Matrix",
-      "summary": "A matrix that changes nothing - the starting point for building a transform.",
-      "help": "Transforming a vector by this gives the same vector back. Start here, then rotate or scale it into the transform you want.",
-      "params": [
-        {
-          "name": "type",
-          "label": "Type",
-          "kind": "menu",
-          "default": "matrix3",
-          "menu": [
-            "matrix3",
-            "matrix",
-            "matrix2"
-          ],
-          "retypes": [
-            "result"
-          ]
-        }
-      ],
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "any",
-          "label": "Matrix"
-        }
-      ],
-      "expr": "{type}(1)",
-      "tags": [
-        "identity",
-        "ident",
-        "matrix",
-        "reset"
-      ]
-    },
-    {
-      "type": "rotate_matrix",
-      "category": "Matrix",
-      "label": "Rotate Matrix",
-      "summary": "Turns a matrix by an angle around an axis.",
-      "help": "Angles here are in radians, not degrees - 3.14159 is half a turn. Use a Degrees to Radians node if you would rather think in degrees.",
-      "params": [
-        {
-          "name": "type",
-          "label": "Matrix",
-          "kind": "menu",
-          "default": "matrix3",
-          "menu": [
-            "matrix3",
-            "matrix"
-          ],
-          "retypes": [
-            "matrix",
-            "result"
-          ]
-        }
-      ],
-      "inputs": [
-        {
-          "name": "matrix",
-          "type": "any",
-          "label": "Matrix"
-        },
-        {
-          "name": "angle",
-          "type": "float",
-          "label": "Angle (radians)",
-          "default": "0"
-        },
-        {
-          "name": "axis",
-          "type": "vector",
-          "label": "Axis",
-          "default": "{0, 1, 0}"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "result",
-          "type": "any",
-          "label": "Matrix",
-          "reads": "matrix"
-        }
-      ],
-      "code": "{type} {result} = {matrix};\nrotate({result}, {angle}, {axis});",
-      "tags": [
-        "rotate",
-        "matrix",
-        "turn",
-        "spin",
-        "axis"
-      ]
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4"
+     ],
+     "retypes": [
+      "a",
+      "b",
+      "result"
+     ]
     }
-  ]
+   ],
+   "inputs": [
+    {
+     "name": "a",
+     "type": "any",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "any",
+     "label": "B",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "any",
+     "label": "Result"
+    }
+   ],
+   "expr": "{a} + {b}",
+   "tags": [
+    "plus",
+    "sum",
+    "+"
+   ]
+  },
+  {
+   "type": "subtract",
+   "label": "Subtract",
+   "summary": "Takes B away from A.",
+   "params": [
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4"
+     ],
+     "retypes": [
+      "a",
+      "b",
+      "result"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "a",
+     "type": "any",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "any",
+     "label": "B",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "any",
+     "label": "Result"
+    }
+   ],
+   "expr": "{a} - {b}",
+   "tags": [
+    "minus",
+    "difference",
+    "-"
+   ]
+  },
+  {
+   "type": "multiply",
+   "label": "Multiply",
+   "summary": "Multiplies two values of the same type.",
+   "params": [
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4"
+     ],
+     "retypes": [
+      "a",
+      "b",
+      "result"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "a",
+     "type": "any",
+     "label": "A",
+     "default": "1"
+    },
+    {
+     "name": "b",
+     "type": "any",
+     "label": "B",
+     "default": "1"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "any",
+     "label": "Result"
+    }
+   ],
+   "expr": "{a} * {b}",
+   "tags": [
+    "times",
+    "product",
+    "*"
+   ]
+  },
+  {
+   "type": "divide",
+   "label": "Divide",
+   "summary": "Divides A by B.",
+   "params": [
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4"
+     ],
+     "retypes": [
+      "a",
+      "b",
+      "result"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "a",
+     "type": "any",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "any",
+     "label": "B",
+     "default": "1"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "any",
+     "label": "Result"
+    }
+   ],
+   "expr": "{a} / {b}",
+   "tags": [
+    "quotient",
+    "over",
+    "/"
+   ]
+  },
+  {
+   "type": "modulo",
+   "label": "Remainder",
+   "summary": "What is left over after dividing A by B.",
+   "help": "Counting every other point is `Element Number` remainder 2 equals 0.",
+   "params": [
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "int",
+     "menu": [
+      "int",
+      "float"
+     ],
+     "retypes": [
+      "a",
+      "b",
+      "result"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "a",
+     "type": "any",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "any",
+     "label": "B",
+     "default": "2"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "any",
+     "label": "Result"
+    }
+   ],
+   "expr": "{a} % {b}",
+   "tags": [
+    "mod",
+    "modulo",
+    "remainder",
+    "%",
+    "every other",
+    "alternate"
+   ]
+  },
+  {
+   "type": "scale",
+   "label": "Scale",
+   "summary": "Multiplies a direction or position by a single number.",
+   "inputs": [
+    {
+     "name": "value",
+     "type": "vector",
+     "label": "Vector",
+     "default": "{0, 0, 0}"
+    },
+    {
+     "name": "amount",
+     "type": "float",
+     "label": "Amount",
+     "default": "1"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "vector",
+     "label": "Result"
+    }
+   ],
+   "expr": "{value} * {amount}",
+   "tags": [
+    "multiply",
+    "size",
+    "scale",
+    "shorten",
+    "lengthen"
+   ]
+  },
+  {
+   "type": "negate",
+   "label": "Negate",
+   "summary": "Flips the sign, so 3 becomes -3.",
+   "params": [
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4"
+     ],
+     "retypes": [
+      "value",
+      "result"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "value",
+     "type": "any",
+     "label": "Value",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "any",
+     "label": "Result"
+    }
+   ],
+   "expr": "-{value}",
+   "tags": [
+    "invert",
+    "flip",
+    "opposite",
+    "minus"
+   ]
+  },
+  {
+   "type": "length",
+   "label": "Length",
+   "summary": "How long a direction is, or how far a position is from the origin.",
+   "inputs": [
+    {
+     "name": "vector",
+     "type": "vector",
+     "label": "Vector",
+     "default": "{0, 0, 0}"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "length",
+     "type": "float",
+     "label": "Length"
+    }
+   ],
+   "expr": "length({vector})",
+   "tags": [
+    "magnitude",
+    "size",
+    "distance",
+    "how long"
+   ]
+  },
+  {
+   "type": "distance_between",
+   "label": "Distance Between",
+   "summary": "How far apart two positions are.",
+   "inputs": [
+    {
+     "name": "a",
+     "type": "vector",
+     "label": "From",
+     "default": "{0, 0, 0}"
+    },
+    {
+     "name": "b",
+     "type": "vector",
+     "label": "To",
+     "default": "{0, 0, 0}"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "distance",
+     "type": "float",
+     "label": "Distance"
+    }
+   ],
+   "expr": "distance({a}, {b})",
+   "tags": [
+    "far",
+    "apart",
+    "length",
+    "gap"
+   ]
+  },
+  {
+   "type": "normalize",
+   "label": "Normalize",
+   "summary": "Shrinks a direction to length 1, keeping which way it points.",
+   "inputs": [
+    {
+     "name": "vector",
+     "type": "vector",
+     "label": "Vector",
+     "default": "{0, 1, 0}"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "direction",
+     "type": "vector",
+     "label": "Direction"
+    }
+   ],
+   "expr": "normalize({vector})",
+   "tags": [
+    "unit",
+    "direction",
+    "unitise"
+   ]
+  },
+  {
+   "type": "dot_product",
+   "label": "Dot Product",
+   "summary": "How much two directions agree: 1 same way, 0 at right angles, -1 opposite.",
+   "inputs": [
+    {
+     "name": "a",
+     "type": "vector",
+     "label": "A",
+     "default": "{0, 1, 0}"
+    },
+    {
+     "name": "b",
+     "type": "vector",
+     "label": "B",
+     "default": "{0, 1, 0}"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "float",
+     "label": "Result"
+    }
+   ],
+   "expr": "dot({a}, {b})",
+   "tags": [
+    "dot",
+    "facing",
+    "angle",
+    "alignment"
+   ]
+  },
+  {
+   "type": "cross_product",
+   "label": "Cross Product",
+   "summary": "A direction at right angles to both inputs.",
+   "inputs": [
+    {
+     "name": "a",
+     "type": "vector",
+     "label": "A",
+     "default": "{1, 0, 0}"
+    },
+    {
+     "name": "b",
+     "type": "vector",
+     "label": "B",
+     "default": "{0, 1, 0}"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "vector",
+     "label": "Result"
+    }
+   ],
+   "expr": "cross({a}, {b})",
+   "tags": [
+    "cross",
+    "perpendicular",
+    "normal",
+    "right angle"
+   ]
+  },
+  {
+   "type": "make_vector",
+   "label": "Make Vector",
+   "summary": "Builds a vector from three separate numbers.",
+   "inputs": [
+    {
+     "name": "x",
+     "type": "float",
+     "label": "X",
+     "default": "0"
+    },
+    {
+     "name": "y",
+     "type": "float",
+     "label": "Y",
+     "default": "0"
+    },
+    {
+     "name": "z",
+     "type": "float",
+     "label": "Z",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "vector",
+     "label": "Vector"
+    }
+   ],
+   "expr": "set({x}, {y}, {z})",
+   "tags": [
+    "build",
+    "combine",
+    "xyz",
+    "pack"
+   ]
+  },
+  {
+   "type": "split_vector",
+   "label": "Split Vector",
+   "summary": "Pulls a vector apart into its three numbers.",
+   "inputs": [
+    {
+     "name": "vector",
+     "type": "vector",
+     "label": "Vector",
+     "default": "{0, 0, 0}"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "x",
+     "type": "float",
+     "label": "X"
+    },
+    {
+     "name": "y",
+     "type": "float",
+     "label": "Y"
+    },
+    {
+     "name": "z",
+     "type": "float",
+     "label": "Z"
+    }
+   ],
+   "tags": [
+    "unpack",
+    "components",
+    "xyz",
+    "separate"
+   ],
+   "builtin": "split_vector"
+  },
+  {
+   "type": "fit_range",
+   "label": "Fit Range",
+   "summary": "Remaps a number from one range onto another.",
+   "help": "Fitting 0-1 onto 2-5 turns 0 into 2, 0.5 into 3.5, and 1 into 5. Set To Type to vector to fade between two colours across the range.",
+   "params": [
+    {
+     "name": "type",
+     "label": "To Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "vector",
+      "vector2",
+      "vector4"
+     ],
+     "retypes": [
+      "new_min",
+      "new_max",
+      "result"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "value",
+     "type": "float",
+     "label": "Value",
+     "default": "0"
+    },
+    {
+     "name": "old_min",
+     "type": "float",
+     "label": "From Min",
+     "default": "0"
+    },
+    {
+     "name": "old_max",
+     "type": "float",
+     "label": "From Max",
+     "default": "1"
+    },
+    {
+     "name": "new_min",
+     "type": "any",
+     "label": "To Min",
+     "default": "0"
+    },
+    {
+     "name": "new_max",
+     "type": "any",
+     "label": "To Max",
+     "default": "1"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "any",
+     "label": "Result"
+    }
+   ],
+   "expr": "fit({value}, {old_min}, {old_max}, {new_min}, {new_max})",
+   "tags": [
+    "remap",
+    "range",
+    "rescale",
+    "map",
+    "fit"
+   ]
+  },
+  {
+   "type": "clamp_value",
+   "label": "Clamp",
+   "summary": "Keeps a number inside a minimum and maximum.",
+   "inputs": [
+    {
+     "name": "value",
+     "type": "float",
+     "label": "Value",
+     "default": "0"
+    },
+    {
+     "name": "minimum",
+     "type": "float",
+     "label": "Minimum",
+     "default": "0"
+    },
+    {
+     "name": "maximum",
+     "type": "float",
+     "label": "Maximum",
+     "default": "1"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "float",
+     "label": "Result"
+    }
+   ],
+   "expr": "clamp({value}, {minimum}, {maximum})",
+   "tags": [
+    "limit",
+    "min",
+    "max",
+    "bound",
+    "constrain"
+   ]
+  },
+  {
+   "type": "blend",
+   "label": "Blend",
+   "summary": "Mixes between two values. 0 gives A, 1 gives B.",
+   "params": [
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "float",
+     "menu": [
+      "float",
+      "vector",
+      "vector2",
+      "vector4"
+     ],
+     "retypes": [
+      "a",
+      "b",
+      "result"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "a",
+     "type": "any",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "any",
+     "label": "B",
+     "default": "1"
+    },
+    {
+     "name": "amount",
+     "type": "float",
+     "label": "Amount",
+     "default": "0.5"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "any",
+     "label": "Result"
+    }
+   ],
+   "expr": "lerp({a}, {b}, {amount})",
+   "tags": [
+    "lerp",
+    "mix",
+    "interpolate",
+    "between"
+   ]
+  },
+  {
+   "type": "absolute",
+   "label": "Absolute",
+   "summary": "Drops the sign, so -3 becomes 3.",
+   "inputs": [
+    {
+     "name": "value",
+     "type": "float",
+     "label": "Value",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "float",
+     "label": "Result"
+    }
+   ],
+   "expr": "abs({value})",
+   "tags": [
+    "abs",
+    "positive",
+    "magnitude"
+   ]
+  },
+  {
+   "type": "power",
+   "label": "Power",
+   "summary": "Raises a number to a power.",
+   "inputs": [
+    {
+     "name": "value",
+     "type": "float",
+     "label": "Value",
+     "default": "1"
+    },
+    {
+     "name": "exponent",
+     "type": "float",
+     "label": "Power",
+     "default": "2"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "float",
+     "label": "Result"
+    }
+   ],
+   "expr": "pow({value}, {exponent})",
+   "tags": [
+    "pow",
+    "exponent",
+    "squared",
+    "cubed"
+   ]
+  },
+  {
+   "type": "square_root",
+   "label": "Square Root",
+   "inputs": [
+    {
+     "name": "value",
+     "type": "float",
+     "label": "Value",
+     "default": "1"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "float",
+     "label": "Result"
+    }
+   ],
+   "expr": "sqrt({value})",
+   "tags": [
+    "sqrt",
+    "root"
+   ]
+  },
+  {
+   "type": "sine",
+   "label": "Sine",
+   "summary": "Sine of an angle in radians. Useful for waves.",
+   "inputs": [
+    {
+     "name": "value",
+     "type": "float",
+     "label": "Angle",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "float",
+     "label": "Result"
+    }
+   ],
+   "expr": "sin({value})",
+   "tags": [
+    "sin",
+    "wave",
+    "oscillate",
+    "trig"
+   ]
+  },
+  {
+   "type": "cosine",
+   "label": "Cosine",
+   "summary": "Cosine of an angle in radians.",
+   "inputs": [
+    {
+     "name": "value",
+     "type": "float",
+     "label": "Angle",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "float",
+     "label": "Result"
+    }
+   ],
+   "expr": "cos({value})",
+   "tags": [
+    "cos",
+    "wave",
+    "trig"
+   ]
+  },
+  {
+   "type": "smallest",
+   "label": "Smallest",
+   "summary": "The smaller of two numbers.",
+   "inputs": [
+    {
+     "name": "a",
+     "type": "float",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "float",
+     "label": "B",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "float",
+     "label": "Result"
+    }
+   ],
+   "expr": "min({a}, {b})",
+   "tags": [
+    "min",
+    "minimum",
+    "lower"
+   ]
+  },
+  {
+   "type": "largest",
+   "label": "Largest",
+   "summary": "The larger of two numbers.",
+   "inputs": [
+    {
+     "name": "a",
+     "type": "float",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "float",
+     "label": "B",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "float",
+     "label": "Result"
+    }
+   ],
+   "expr": "max({a}, {b})",
+   "tags": [
+    "max",
+    "maximum",
+    "higher"
+   ]
+  },
+  {
+   "type": "round_to_int",
+   "label": "Round To Whole",
+   "summary": "Turns a number with decimals into a whole number.",
+   "params": [
+    {
+     "name": "mode",
+     "label": "Direction",
+     "kind": "menu",
+     "default": "rint",
+     "menu": [
+      "rint",
+      "floor",
+      "ceil",
+      "trunc"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "value",
+     "type": "float",
+     "label": "Value",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "int",
+     "label": "Whole Number"
+    }
+   ],
+   "code": "int {result} = int({mode}({value}));",
+   "tags": [
+    "int",
+    "integer",
+    "floor",
+    "ceil",
+    "round",
+    "truncate",
+    "whole"
+   ]
+  },
+  {
+   "type": "random_number",
+   "category": "Random",
+   "label": "Random Number",
+   "summary": "A repeatable random number between 0 and 1.",
+   "help": "The same seed always gives the same number, which is what makes a render stable. Feed it the element number for a different value per point.",
+   "inputs": [
+    {
+     "name": "seed",
+     "type": "float",
+     "label": "Seed",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "value",
+     "type": "float",
+     "label": "Value"
+    }
+   ],
+   "code": "float {value} = rand({seed});",
+   "tags": [
+    "rand",
+    "random",
+    "noise",
+    "vary",
+    "jitter"
+   ]
+  },
+  {
+   "type": "random_vector",
+   "category": "Random",
+   "label": "Random Vector",
+   "summary": "Three repeatable random numbers between 0 and 1.",
+   "inputs": [
+    {
+     "name": "seed",
+     "type": "float",
+     "label": "Seed",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "value",
+     "type": "vector",
+     "label": "Vector"
+    }
+   ],
+   "code": "vector {value} = rand({seed});",
+   "tags": [
+    "rand",
+    "random",
+    "direction",
+    "vary"
+   ]
+  },
+  {
+   "type": "noise_value",
+   "category": "Random",
+   "label": "Noise",
+   "summary": "Smooth random values that change gradually across space.",
+   "help": "Scale the position going in to control how big the pattern is: smaller numbers make it broader.",
+   "inputs": [
+    {
+     "name": "position",
+     "type": "vector",
+     "label": "Position",
+     "default": "{0, 0, 0}"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "value",
+     "type": "float",
+     "label": "Value"
+    }
+   ],
+   "code": "float {value} = noise({position});",
+   "tags": [
+    "noise",
+    "perlin",
+    "smooth",
+    "organic",
+    "pattern"
+   ]
+  },
+  {
+   "type": "is_greater",
+   "category": "Compare",
+   "label": "Is Greater Than",
+   "summary": "True when A is bigger than B.",
+   "inputs": [
+    {
+     "name": "a",
+     "type": "float",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "float",
+     "label": "B",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "int",
+     "label": "True/False"
+    }
+   ],
+   "expr": "{a} > {b}",
+   "tags": [
+    "compare",
+    "bigger",
+    "more",
+    "greater",
+    ">"
+   ]
+  },
+  {
+   "type": "is_less",
+   "category": "Compare",
+   "label": "Is Less Than",
+   "summary": "True when A is smaller than B.",
+   "inputs": [
+    {
+     "name": "a",
+     "type": "float",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "float",
+     "label": "B",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "int",
+     "label": "True/False"
+    }
+   ],
+   "expr": "{a} < {b}",
+   "tags": [
+    "compare",
+    "smaller",
+    "less",
+    "under",
+    "<"
+   ]
+  },
+  {
+   "type": "is_equal",
+   "category": "Compare",
+   "label": "Is Equal To",
+   "summary": "True when two whole numbers match.",
+   "help": "Comparing numbers with decimals for exact equality almost never works. Use Is Less Than on the difference instead.",
+   "inputs": [
+    {
+     "name": "a",
+     "type": "int",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "int",
+     "label": "B",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "int",
+     "label": "True/False"
+    }
+   ],
+   "expr": "{a} == {b}",
+   "tags": [
+    "compare",
+    "same",
+    "equal",
+    "match",
+    "=="
+   ]
+  },
+  {
+   "type": "is_not_equal",
+   "category": "Compare",
+   "label": "Is Not Equal To",
+   "summary": "True when the two values differ.",
+   "inputs": [
+    {
+     "name": "a",
+     "type": "float",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "float",
+     "label": "B",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "int",
+     "label": "True/False"
+    }
+   ],
+   "expr": "{a} != {b}",
+   "tags": [
+    "compare",
+    "different",
+    "not equal",
+    "!="
+   ]
+  },
+  {
+   "type": "is_greater_equal",
+   "category": "Compare",
+   "label": "Is Greater Or Equal",
+   "summary": "True when A is at least B.",
+   "inputs": [
+    {
+     "name": "a",
+     "type": "float",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "float",
+     "label": "B",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "int",
+     "label": "True/False"
+    }
+   ],
+   "expr": "{a} >= {b}",
+   "tags": [
+    "compare",
+    "at least",
+    ">="
+   ]
+  },
+  {
+   "type": "is_less_equal",
+   "category": "Compare",
+   "label": "Is Less Or Equal",
+   "summary": "True when A is at most B.",
+   "inputs": [
+    {
+     "name": "a",
+     "type": "float",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "float",
+     "label": "B",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "int",
+     "label": "True/False"
+    }
+   ],
+   "expr": "{a} <= {b}",
+   "tags": [
+    "compare",
+    "at most",
+    "<="
+   ]
+  },
+  {
+   "type": "both_true",
+   "category": "Compare",
+   "label": "Both True",
+   "summary": "True only when both inputs are true.",
+   "inputs": [
+    {
+     "name": "a",
+     "type": "int",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "int",
+     "label": "B",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "int",
+     "label": "True/False"
+    }
+   ],
+   "expr": "{a} && {b}",
+   "tags": [
+    "and",
+    "both",
+    "logic"
+   ]
+  },
+  {
+   "type": "either_true",
+   "category": "Compare",
+   "label": "Either True",
+   "summary": "True when at least one input is true.",
+   "inputs": [
+    {
+     "name": "a",
+     "type": "int",
+     "label": "A",
+     "default": "0"
+    },
+    {
+     "name": "b",
+     "type": "int",
+     "label": "B",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "int",
+     "label": "True/False"
+    }
+   ],
+   "expr": "{a} || {b}",
+   "tags": [
+    "or",
+    "either",
+    "logic"
+   ]
+  },
+  {
+   "type": "not_true",
+   "category": "Compare",
+   "label": "Not",
+   "summary": "Flips true to false and false to true.",
+   "inputs": [
+    {
+     "name": "value",
+     "type": "int",
+     "label": "True/False",
+     "default": "0"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "int",
+     "label": "True/False"
+    }
+   ],
+   "expr": "!{value}",
+   "tags": [
+    "not",
+    "invert",
+    "opposite",
+    "logic"
+   ]
+  },
+  {
+   "type": "transform_by_matrix",
+   "category": "Matrix",
+   "label": "Transform by Matrix",
+   "summary": "Moves, rotates or scales a vector using a matrix.",
+   "help": "A matrix packs a whole transform into one value. Feeding a position through one is how you rotate or scale points without touching each axis by hand. Use a matrix3 to rotate/scale a direction, or a matrix to also move a position.",
+   "params": [
+    {
+     "name": "type",
+     "label": "Matrix",
+     "kind": "menu",
+     "default": "matrix3",
+     "menu": [
+      "matrix3",
+      "matrix",
+      "matrix2"
+     ],
+     "retypes": [
+      "matrix"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "vector",
+     "type": "vector",
+     "label": "Vector",
+     "default": "{0, 0, 0}"
+    },
+    {
+     "name": "matrix",
+     "type": "any",
+     "label": "Matrix"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "vector",
+     "label": "Result"
+    }
+   ],
+   "expr": "{vector} * {matrix}",
+   "tags": [
+    "transform",
+    "matrix",
+    "rotate",
+    "multiply",
+    "xform",
+    "*"
+   ]
+  },
+  {
+   "type": "identity_matrix",
+   "category": "Matrix",
+   "label": "Identity Matrix",
+   "summary": "A matrix that changes nothing - the starting point for building a transform.",
+   "help": "Transforming a vector by this gives the same vector back. Start here, then rotate or scale it into the transform you want.",
+   "params": [
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "menu",
+     "default": "matrix3",
+     "menu": [
+      "matrix3",
+      "matrix",
+      "matrix2"
+     ],
+     "retypes": [
+      "result"
+     ]
+    }
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "any",
+     "label": "Matrix"
+    }
+   ],
+   "expr": "{type}(1)",
+   "tags": [
+    "identity",
+    "ident",
+    "matrix",
+    "reset"
+   ]
+  },
+  {
+   "type": "rotate_matrix",
+   "category": "Matrix",
+   "label": "Rotate Matrix",
+   "summary": "Turns a matrix by an angle around an axis.",
+   "help": "Angles here are in radians, not degrees - 3.14159 is half a turn. Use a Degrees to Radians node if you would rather think in degrees.",
+   "params": [
+    {
+     "name": "type",
+     "label": "Matrix",
+     "kind": "menu",
+     "default": "matrix3",
+     "menu": [
+      "matrix3",
+      "matrix"
+     ],
+     "retypes": [
+      "matrix",
+      "result"
+     ]
+    }
+   ],
+   "inputs": [
+    {
+     "name": "matrix",
+     "type": "any",
+     "label": "Matrix"
+    },
+    {
+     "name": "angle",
+     "type": "float",
+     "label": "Angle (radians)",
+     "default": "0"
+    },
+    {
+     "name": "axis",
+     "type": "vector",
+     "label": "Axis",
+     "default": "{0, 1, 0}"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "any",
+     "label": "Matrix",
+     "reads": "matrix"
+    }
+   ],
+   "code": "{type} {result} = {matrix};\nrotate({result}, {angle}, {axis});",
+   "tags": [
+    "rotate",
+    "matrix",
+    "turn",
+    "spin",
+    "axis"
+   ]
+  },
+  {
+   "type": "random_range",
+   "label": "Random Range",
+   "repeatable": true,
+   "summary": "A random number between two values, steady per seed.",
+   "inputs": [
+    {
+     "name": "seed",
+     "type": "float",
+     "label": "Seed",
+     "default": "@ptnum"
+    },
+    {
+     "name": "min",
+     "type": "float",
+     "label": "Min",
+     "default": "0"
+    },
+    {
+     "name": "max",
+     "type": "float",
+     "label": "Max",
+     "default": "1"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "value",
+     "type": "float",
+     "label": "Value"
+    }
+   ],
+   "expr": "fit01(rand({seed}), {min}, {max})",
+   "tags": [
+    "random",
+    "range",
+    "rand",
+    "fit01",
+    "between",
+    "jitter"
+   ]
+  }
+ ]
 }

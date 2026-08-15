@@ -51,6 +51,15 @@ STANDARD_ATTRIBUTES = {
 
 PREFIX_TYPES = {v: k for k, v in vextypes.ATTR_PREFIX.items()}
 
+# Channel reads that are parameters, not computations. A third of some
+# imported graphs was boxes that said chf("x") with one wire out; folding
+# them into the consuming input reads the way the wrangle itself does.
+CHANNEL_READS = {
+    "ch": "float", "chf": "float", "chi": "int", "chv": "vector",
+    "chs": "string", "chu": "vector2", "chp": "vector4",
+    "ch3": "matrix3", "ch4": "matrix",
+}
+
 # Globals the SOP context provides without an `@`, and the attribute each one
 # is the same thing as. Documented on the Point Wrangle page; snippets written
 # by hand use the bare spelling often, and reading them as undeclared variables
@@ -179,10 +188,21 @@ class FunctionIndex:
         if quoted:
             text = text[1:-1]
         # Generated nodes wrap arguments in a cast to pin down an overload.
-        cast = re.match(r"^[A-Za-z_]\w*\((\{[A-Za-z_]\w*\})\)$", text)
+        # Only real VEX types count: `rand({seed})` looks exactly like a cast
+        # to this pattern, and unwrapping it would index a template that
+        # embeds a call as if it were a plain wire.
+        cast = re.match(
+            r"^(?:int|float|vector4|vector2|vector|string"
+            r"|matrix3|matrix2|matrix|dict)\((\{[A-Za-z_]\w*\})\)$", text)
         if cast:
             text = cast.group(1)
         if not PLACEHOLDER_ONLY.match(text):
+            # A fixed slot with a placeholder inside (`rand({seed})`) is not a
+            # fixed value at all - it is a template this index cannot compare
+            # against real arguments. Refusing keeps the whole definition out,
+            # so Random Range imports only through its explicit recogniser.
+            if "{" in text:
+                return None
             return Slot("fixed", text)
         name = text[1:-1]
         if definition.input(name) is not None:
@@ -904,6 +924,22 @@ class Importer:
             return self._operator(expr.op, [expr.left, expr.right])
 
         if isinstance(expr, Call):
+            folded = self._channel_literal(expr)
+            if folded is not None:
+                return folded
+            # `fit01(rand(seed), min, max)` is THE per-element-random idiom -
+            # 27 corpus snippets spell it - and as separate calls it costs a
+            # rand node, a fit node and often a negate. One node says it.
+            if (expr.name == "fit01" and len(expr.args) == 3
+                    and isinstance(expr.args[0], Call)
+                    and expr.args[0].name == "rand"
+                    and len(expr.args[0].args) == 1):
+                node = self.graph.add("random_range", self._name("random"))
+                self._feed(node.id, "seed",
+                           self._expression(expr.args[0].args[0]))
+                self._feed(node.id, "min", self._expression(expr.args[1]))
+                self._feed(node.id, "max", self._expression(expr.args[2]))
+                return Value(node=node.id, socket="value", type="float")
             signature = self._choose_signature(expr)
             if signature is None:
                 raise Unsupported(f"no node calls {expr.name}()")
@@ -1280,6 +1316,22 @@ class Importer:
                                      wanted, touched):
                 return False
         return True
+
+    def _channel_literal(self, expr: Call) -> Value | None:
+        """chf("scale") as a value, not a node.
+
+        A channel read is a *parameter* - in the wrangle it is a spinner, not
+        a step of the computation - so it belongs written inside the input
+        that uses it, exactly where a person typing the code would put it.
+        Only the literal-name form folds; ch(variable) still needs a node.
+        """
+        vex_type = CHANNEL_READS.get(expr.name)
+        if vex_type is None or len(expr.args) != 1:
+            return None
+        argument = expr.args[0]
+        if not (isinstance(argument, Literal) and argument.kind == "string"):
+            return None
+        return Value(literal=f"{expr.name}({argument.text})", type=vex_type)
 
     def _alias(self, name: str, node_id: str, socket: str) -> None:
         """Point a variable name at a node's output instead of a variable."""

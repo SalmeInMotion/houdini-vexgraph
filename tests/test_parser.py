@@ -558,3 +558,30 @@ def test_a_string_literal_never_lands_in_an_int_slot(registry):
                        registry)
     assert 'getbbox_center("uvwrap:uv opinput:0")' in code
     assert 'int("' not in code
+
+
+def test_channel_reads_fold_into_the_inputs_that_use_them(registry):
+    """chf("x") is a spinner, not a computation - it belongs written inside
+    the input that uses it, not as a box with one wire out."""
+    code, report = imported('@pscale = chf("size") * @P.x + ch("base");',
+                            registry)
+    assert report.inlined == 0
+    assert '@pscale = chf("size") * @P.x + ch("base");' in code
+    types = {n.type for n in report.graph.nodes.values()}
+    assert not any(t.startswith("vex_ch") for t in types)
+
+
+def test_the_random_idiom_is_one_node(registry):
+    """fit01(rand(seed), min, max) is THE per-element random; 27 corpus
+    snippets spell it, and as separate calls it cost three nodes."""
+    code, report = imported("f@x = fit01(rand(@ptnum + 3), 2, 5);", registry)
+    assert "random_range" in {n.type for n in report.graph.nodes.values()}
+    assert "f@x = fit01(rand(@ptnum + 3), 2, 5);" in code
+
+
+def test_plain_fit01_is_not_hijacked_by_random_range(registry):
+    """The Random Range template embeds rand(); a plain fit01 must never
+    import through it, or the round trip would invent randomness."""
+    code, report = imported("f@x = fit01(@P.x, 2, 5);", registry)
+    assert "random_range" not in {n.type for n in report.graph.nodes.values()}
+    assert "rand(" not in code
