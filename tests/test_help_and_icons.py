@@ -204,13 +204,13 @@ def test_the_docs_button_looks_different_when_there_is_nothing_to_open(registry)
     QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     browser = NodeBrowser(registry)
 
-    browser._describe("closest_surface_point")          # xyzdist(): documented
+    browser.describe("closest_surface_point")          # xyzdist(): documented
     assert browser.docs_button.isEnabled()
     documented_text = browser.docs_button.text()
     documented_style = browser.docs_button.styleSheet()
     assert "xyzdist" in documented_text, "the button should name the function"
 
-    browser._describe("not_true")                        # an operator: no page
+    browser.describe("not_true")                        # an operator: no page
     assert not browser.docs_button.isEnabled()
     assert browser.docs_button.text() != documented_text
     assert browser.docs_button.styleSheet() != documented_style, \

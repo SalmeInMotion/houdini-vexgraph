@@ -45,7 +45,7 @@ class NodeBrowser(QtWidgets.QWidget):
         self._doc_url = ""
         self.tree = NodeTree(registry)
         self.tree.node_chosen.connect(self.node_chosen)
-        self.tree.selection_changed.connect(self._describe)
+        self.tree.selection_changed.connect(self.describe)
 
         self.detail = QtWidgets.QTextBrowser()
         self.detail.setFont(theme.ui_font(8))
@@ -145,7 +145,14 @@ class NodeBrowser(QtWidgets.QWidget):
         if self._doc_url:
             QtGui.QDesktopServices.openUrl(QtCore.QUrl(self._doc_url))
 
-    def _describe(self, node_type: str) -> None:
+    def describe(self, node_type: str) -> None:
+        """Show this node's help, wherever the interest in it came from.
+
+        Public because the canvas drives it too: selecting a node in the graph
+        should fill this pane the same way picking it out of the tree does, so
+        the description is always about the node you are working on rather than
+        the last one you happened to look up.
+        """
         definition = self.registry.get(node_type)
         self._selected = node_type if definition is not None else ""
         self.add_button.setEnabled(definition is not None)

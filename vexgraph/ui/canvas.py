@@ -12,6 +12,8 @@ worth more than the same message in a compiler log ten minutes later.
 
 from __future__ import annotations
 
+import json
+
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from ..graph import EXEC_PIN, Graph, Node
@@ -29,6 +31,10 @@ CLICK_SLOP = 6
 class GraphScene(QtWidgets.QGraphicsScene):
     graph_changed = QtCore.Signal()
     selection_described = QtCore.Signal(str)
+    # The type of the single selected node, so the library's detail pane can
+    # follow the canvas: whichever node you touched last is the one described,
+    # whether you reached it through the tree or by clicking it in the graph.
+    selection_typed = QtCore.Signal(str)
     message = QtCore.Signal(str)
 
     def __init__(self, graph: Graph, parent=None):
@@ -123,6 +129,85 @@ class GraphScene(QtWidgets.QGraphicsScene):
             views[0].setFocus(QtCore.Qt.FocusReason.OtherFocusReason)
         self.graph_changed.emit()
         return item
+
+    def copy_selected(self) -> int:
+        """Put the selected nodes, and the wires between them, on the clipboard.
+
+        Plain JSON on the system clipboard rather than a private buffer, so a
+        chunk of graph can be moved between two VEXgraph windows - and pasted
+        into a text file to keep, which is the cheapest possible way to save a
+        fragment you want again tomorrow.
+
+        Only wires with both ends inside the selection travel: a wire to a node
+        that was not copied has nothing to reconnect to.
+        """
+        nodes = [item.node for item in self.selectedItems()
+                 if isinstance(item, NodeItem)]
+        if not nodes:
+            return 0
+        inside = {node.id for node in nodes}
+        payload = {
+            "vexgraph": "nodes",
+            "nodes": [node.to_dict() for node in nodes],
+            "links": [link.to_dict() for link in self.graph.links
+                      if link.from_node in inside and link.to_node in inside],
+        }
+        QtWidgets.QApplication.clipboard().setText(json.dumps(payload, indent=1))
+        return len(nodes)
+
+    def paste(self, at: QtCore.QPointF | None = None) -> int:
+        """Add the clipboard's nodes as a fresh copy, keeping their layout.
+
+        Ids are reassigned - pasting into the graph the nodes came from would
+        otherwise collide - and the wires are remapped onto the new ids, so the
+        pasted group is wired exactly like the one that was copied.
+        """
+        try:
+            payload = json.loads(QtWidgets.QApplication.clipboard().text())
+            raw_nodes = list(payload["nodes"])
+        except (ValueError, TypeError, KeyError):
+            return 0
+        if payload.get("vexgraph") != "nodes" or not raw_nodes:
+            return 0
+
+        # Keep the shape of the copied group: everything moves by one offset,
+        # measured from its top-left corner.
+        left = min(raw["pos"][0] for raw in raw_nodes)
+        top = min(raw["pos"][1] for raw in raw_nodes)
+        shift = (at.x() - left, at.y() - top) if at is not None else (40.0, 40.0)
+
+        renamed: dict[str, str] = {}
+        created: list[NodeItem] = []
+        for raw in raw_nodes:
+            try:
+                node = self.graph.add(raw["type"], **raw.get("params", {}))
+            except Exception as exc:      # a node type this build does not have
+                self.message.emit(str(exc))
+                continue
+            renamed[raw["id"]] = node.id
+            node.title = raw.get("title", "")
+            node.pos = (raw["pos"][0] + shift[0], raw["pos"][1] + shift[1])
+            item = NodeItem(self.graph, node)
+            self.addItem(item)
+            self.node_items[node.id] = item
+            created.append(item)
+
+        if not created:
+            return 0
+
+        for raw in payload.get("links", ()):
+            source, target = renamed.get(raw["from"]), renamed.get(raw["to"])
+            if source and target:
+                self.graph.connect(source, raw["out"], target, raw["in"],
+                                   is_exec=bool(raw.get("exec")))
+
+        self.clearSelection()
+        for item in created:
+            item.setSelected(True)
+        self.rebuild_links()
+        self._rebuild_rows()
+        self.graph_changed.emit()
+        return len(created)
 
     def delete_selected(self) -> None:
         removed = False
@@ -493,9 +578,11 @@ class GraphScene(QtWidgets.QGraphicsScene):
         nodes = [i for i in self.selectedItems() if isinstance(i, NodeItem)]
         if len(nodes) != 1:
             self.selection_described.emit("")
+            self.selection_typed.emit("")
             return
         item = nodes[0]
         definition = item.definition
+        self.selection_typed.emit(definition.type)
         parts = [f"<b>{definition.label}</b>"]
         if definition.summary:
             parts.append(definition.summary)
@@ -753,6 +840,7 @@ class GraphView(QtWidgets.QGraphicsView):
         QtCore.Qt.Key.Key_Delete, QtCore.Qt.Key.Key_Backspace,
         QtCore.Qt.Key.Key_Tab, QtCore.Qt.Key.Key_F, QtCore.Qt.Key.Key_Escape,
         QtCore.Qt.Key.Key_Z, QtCore.Qt.Key.Key_Y,
+        QtCore.Qt.Key.Key_C, QtCore.Qt.Key.Key_X, QtCore.Qt.Key.Key_V,
     })
 
     def event(self, event: QtCore.QEvent) -> bool:
@@ -761,6 +849,17 @@ class GraphView(QtWidgets.QGraphicsView):
             event.accept()
             return True
         return super().event(event)
+
+    def focusNextPrevChild(self, forward: bool) -> bool:
+        """Keep Tab for the node list.
+
+        Qt handles Tab inside QWidget.event() as focus navigation and never
+        calls keyPressEvent for it, so the Tab handler below looked correct and
+        simply never ran - the key moved focus to the next widget instead of
+        opening the search. Refusing focus navigation here is what lets it
+        through. There is nothing to tab between on a canvas anyway.
+        """
+        return False
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
         key = event.key()
@@ -785,6 +884,30 @@ class GraphView(QtWidgets.QGraphicsView):
             event.accept()
         else:
             super().keyPressEvent(event)
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        """Draw the expression's name over the canvas, top left.
+
+        Painted on the viewport rather than into the scene so it stays put
+        while you pan and zoom - it labels the whole graph, not a place in it.
+        """
+        super().paintEvent(event)
+        name = getattr(self.scene().graph, "name", "")
+        if not name:
+            return
+        painter = QtGui.QPainter(self.viewport())
+        painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing)
+        font = theme.ui_font(11, bold=True)
+        painter.setFont(font)
+        metrics = QtGui.QFontMetrics(font)
+        box = metrics.boundingRect(name).adjusted(-10, -6, 10, 6)
+        box.moveTopLeft(QtCore.QPoint(12, 12))
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(QtGui.QColor(0, 0, 0, 90))
+        painter.drawRoundedRect(box, 4, 4)
+        painter.setPen(QtGui.QColor("#c8d4dc"))
+        painter.drawText(box, QtCore.Qt.AlignmentFlag.AlignCenter, name)
+        painter.end()
 
     def frame_all(self) -> None:
         items = [i for i in self.scene().items() if isinstance(i, NodeItem)]

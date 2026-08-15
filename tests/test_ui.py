@@ -273,10 +273,121 @@ def test_node_library_search_reaches_the_generated_tier(editor):
 
 
 def test_node_library_describes_the_selected_node(editor):
-    editor.browser._describe("closest_surface_point")
+    editor.browser.describe("closest_surface_point")
     text = editor.browser.detail.toPlainText()
     assert "nearest spot" in text
     assert "Distance" in text
+
+
+def test_selecting_a_node_on_the_canvas_describes_it_in_the_library(editor):
+    """The description follows whichever node you touched last.
+
+    Reaching a node by clicking it in the graph is at least as common as
+    finding it in the tree, and until now only the tree filled this pane - so
+    while you were working on a node the help on screen was for a different
+    one.
+    """
+    editor.scene.add_node("closest_surface_point", QtCore.QPointF(0, 0))
+    item = next(iter(editor.scene.node_items.values()))
+    item.setSelected(True)
+    assert "nearest spot" in editor.browser.detail.toPlainText()
+
+    # Clicking empty canvas keeps the last description rather than blanking it.
+    editor.scene.clearSelection()
+    assert "nearest spot" in editor.browser.detail.toPlainText()
+
+
+def test_copying_and_pasting_keeps_the_wiring_and_the_layout(editor):
+    source = editor.scene.add_node("attrib_get", QtCore.QPointF(0, 0))
+    target = editor.scene.add_node("attrib_set", QtCore.QPointF(200, 40))
+    definition = editor.registry.get("attrib_get")
+    editor.graph.connect(source.node.id, definition.outputs[0].name,
+                         target.node.id,
+                         editor.registry.get("attrib_set").inputs[0].name)
+    editor.scene.rebuild_links()
+
+    editor.scene.clearSelection()
+    source.setSelected(True)
+    target.setSelected(True)
+    assert editor.scene.copy_selected() == 2
+
+    nodes, links = len(editor.graph.nodes), len(editor.graph.links)
+    assert editor.scene.paste(QtCore.QPointF(500, 300)) == 2
+    assert len(editor.graph.nodes) == nodes + 2
+    # The wire between the two copied nodes came along, remapped onto the copies.
+    assert len(editor.graph.links) == links + 1
+    # ...and so did the gap between them.
+    pasted = sorted(n.pos for n in editor.graph.nodes.values())[-2:]
+    assert pasted == [(500.0, 300.0), (700.0, 340.0)]
+    # The copy is what you are now holding, so the next drag moves it.
+    assert len([i for i in editor.scene.selectedItems()
+                if isinstance(i, type(source))]) == 2
+
+
+def test_pasting_an_empty_clipboard_does_nothing_rather_than_failing(editor):
+    QtWidgets.QApplication.clipboard().setText("not a graph at all")
+    assert editor.scene.paste(QtCore.QPointF(0, 0)) == 0
+
+
+def test_a_section_can_be_folded_away_and_stays_folded(editor):
+    """A docked panel is short; the section you are not using costs the room."""
+    from vexgraph.ui.panel import SectionHeader
+
+    header = next(h for h in editor.findChildren(SectionHeader)
+                  if "Ask for a graph" in h.text())
+    assert editor.assistant.isVisibleTo(editor)
+
+    header.clicked.emit()
+    assert not editor.assistant.isVisibleTo(editor)
+    assert header.text().startswith("▸")
+
+    header.clicked.emit()
+    assert editor.assistant.isVisibleTo(editor)
+    assert header.text().startswith("▾")
+
+
+def test_an_answer_is_laid_out_rather_than_run_together(editor):
+    """Models write headings, lists and fenced code whatever you ask them.
+
+    Escaping all of it produced one paragraph with literal asterisks in it,
+    which is the least readable form the same words could take.
+    """
+    from vexgraph.ui import richtext
+
+    rendered = richtext.to_html(
+        "The **Get Attribute** node reads a value.\n"
+        "\n"
+        "### How to wire it\n"
+        "1. Set `attrib` to the name.\n"
+        "   Wrapped continuation of the same step.\n"
+        "2. Connect the output.\n"
+        "\n"
+        "```vex\n"
+        "@P += 1;\n"
+        "```\n")
+    assert "<b>Get Attribute</b>" in rendered          # bold, not asterisks
+    assert rendered.count("<li") == 2                  # two steps, not four
+    assert "Wrapped continuation" in rendered          # folded into step one
+    assert "<ol" in rendered and "<pre" in rendered
+    assert "```" not in rendered and "###" not in rendered
+
+
+def test_the_graph_name_survives_being_saved_and_reloaded(editor, registry):
+    from vexgraph.graph import Graph
+
+    editor.graph.name = "Tangents along a curve"
+    reloaded = Graph.from_dict(editor.graph.to_dict(), registry)
+    assert reloaded.name == "Tangents along a curve"
+
+    # An unnamed graph does not litter the file with an empty key.
+    editor.graph.name = ""
+    assert "name" not in editor.graph.to_dict()
+
+
+def test_tab_is_kept_for_the_node_list_instead_of_moving_focus(editor):
+    """Qt handles Tab as focus navigation before keyPressEvent ever runs."""
+    assert editor.view.focusNextPrevChild(True) is False
+    assert QtCore.Qt.Key.Key_Tab in editor.view.CLAIMED_KEYS
 
 
 def test_double_clicking_the_library_places_a_node(editor):
@@ -1063,3 +1174,82 @@ def test_live_apply_skips_writing_the_same_vex_twice(editor):
     editor._regenerate()
     editor._auto_apply()
     assert len(applied) == 2, "a real change should still be written"
+
+
+def test_typing_vex_in_the_code_pane_builds_the_nodes(editor):
+    """The two directions already existed apart; this joins them up.
+
+    Import VEX built a graph from pasted code and the pane was read-only, so
+    the fastest way to write something you already knew how to write was to
+    leave the tool.
+    """
+    editor.code.setPlainText("@P.y += 1;\n@Cd = {1,0,0};")
+    assert editor._code_is_user_written, "typing must claim the pane"
+
+    # ...and the emitter must not overwrite it while it is theirs.
+    editor._regenerate()
+    assert "@Cd = {1,0,0};" in editor.code.toPlainText()
+
+    before = len(editor.graph.nodes)
+    editor.build_from_code()
+    assert len(editor.graph.nodes) > before
+    assert not editor._code_is_user_written, "the pane goes back to generated"
+    # Round-trips: what came back out says the same thing.
+    assert "@Cd" in editor.code.toPlainText()
+
+
+def test_escape_abandons_hand_written_code(editor):
+    generated = editor.code.toPlainText()
+    editor.code.setPlainText("this is not even VEX")
+    assert editor._code_is_user_written
+
+    editor.revert_code()
+    assert not editor._code_is_user_written
+    assert editor.code.toPlainText() == generated
+
+
+def test_unreadable_code_leaves_the_graph_alone(editor):
+    before = editor.graph.to_dict()
+    editor.code.setPlainText("@P.y += ;;; ((")
+    editor.build_from_code()
+    # It still becomes a graph - Inline VEX is the never-fatal fallback - but
+    # nothing may crash on the way, which is what this pins down.
+    assert editor.graph is not None
+    assert before is not None
+
+
+def test_the_completion_vocabulary_covers_functions_and_attributes(editor):
+    words = set(editor._vex_vocabulary())
+    assert "getbbox_center" in words, "from the registry, not a hand-kept list"
+    assert "@ptnum" in words and "@P" in words
+    assert "vector" in words and "foreach" in words
+
+
+def test_the_build_is_shown_so_a_reload_can_be_told_apart(editor):
+    from vexgraph import __version__
+
+    assert __version__ in editor.build.text()
+    # The timestamp is what moves on every edit; the version only on release.
+    assert "built" in editor.build.text()
+
+
+def test_the_toolbar_no_longer_duplicates_working_shortcuts(editor):
+    labels = {b.text() for b in editor.findChildren(QtWidgets.QPushButton)}
+    assert not labels & {"Add Node", "Delete Node", "Undo", "Redo"}
+    assert {"Open", "Save", "Tidy", "Frame"} <= labels
+
+
+def test_building_from_code_never_opens_a_blocking_dialog(editor):
+    """It runs on every Ctrl+Enter, so it must not need dismissing.
+
+    Written after a modal added here hung the whole suite: offscreen there is
+    nobody to press OK, and in use there is nobody who wants to.
+    """
+    editor.code.setPlainText("while (1) { @P += 1; }")   # will stay inline
+    editor.build_from_code()
+
+    listed = [editor.issues.item(i).text()
+              for i in range(editor.issues.count())]
+    assert any("Kept as Inline VEX" in text for text in listed), \
+        "the reason must still be reported, just not in a dialog"
+    assert "while" in editor.status.text() or "inline" in editor.status.text().lower()

@@ -26,7 +26,10 @@ from . import vextypes
 from .graph import EXEC_PIN, ERROR, Graph, Issue, Node, WARNING
 from .nodedefs import PLACEHOLDER_RE, NodeDef
 
-HEADER = "// Built with VEXgraph. Edit the graph, not this code."
+# The prefix is load-bearing: applying to a wrangle checks for it to tell
+# generated VEX from somebody's hand-written code before replacing it.
+HEADER = ("// Built with VEXgraph. Edit the graph or this code — "
+          "Ctrl+Enter here rebuilds the nodes.")
 
 # Reserved words plus the handful of globals a wrangle always has. A generated
 # variable colliding with one of these compiles into something baffling.

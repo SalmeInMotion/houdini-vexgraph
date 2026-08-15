@@ -13,6 +13,8 @@ from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .. import help as vexhelp
+from .. import snippets
+from .. import version_line
 from ..codegen import generate
 from ..graph import ERROR, Graph, Issue
 from ..nodedefs import Registry, default_registry
@@ -31,6 +33,28 @@ COMPILE_DELAY_MS = 700
 # every command would have to get its inverse exactly right, and an undo that
 # quietly corrupts the graph is worse than no undo. These graphs are small.
 UNDO_DEPTH = 100
+
+
+# Qt's "no maximum", which PySide does not expose as a constant.
+QWIDGETSIZE_MAX = (1 << 24) - 1
+
+
+class SectionHeader(QtWidgets.QLabel):
+    """A section heading that reports being clicked.
+
+    A plain QLabel would do if PySide reliably honoured an event handler
+    assigned onto an instance; it does not, so the one virtual this needs is
+    overridden the ordinary way.
+    """
+
+    clicked = QtCore.Signal()
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
 
 class History:
@@ -91,6 +115,9 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.graph = graph or self._starter_graph()
         self.path: Path | None = None
         self._search: NodeSearch | None = None
+        # Which sections were folded away last time. Small enough to belong in
+        # the platform's own settings rather than a file of our own.
+        self._settings = QtCore.QSettings("VEXgraph", "VEXgraph")
 
         self.scene = GraphScene(self.graph, self)
         self.view = GraphView(self.scene)
@@ -101,6 +128,9 @@ class VexGraphEditor(QtWidgets.QWidget):
         # The most recent emission, and the text last written to the wrangle.
         self._last_emission = None
         self._applied_code = ""
+        # True once the code pane holds something a person typed rather than
+        # something the emitter produced. While it is, the emitter keeps off.
+        self._code_is_user_written = False
 
         self._build_ui()
         self._install_history()
@@ -113,8 +143,13 @@ class VexGraphEditor(QtWidgets.QWidget):
         self._compile_timer.timeout.connect(self._compile)
         self._compile_timer.timeout.connect(self._auto_apply)
 
+        self.code.set_vocabulary(self._vex_vocabulary())
         self._regenerate()
         QtCore.QTimer.singleShot(0, self.view.frame_all)
+        # Kept current in the background: it reads a few files and writes one,
+        # which is too slow to do while the window is trying to appear and far
+        # too cheap to make anybody ask for it.
+        QtCore.QTimer.singleShot(400, self._export_wrangle_menu)
 
     def _starter_graph(self) -> Graph:
         graph = Graph(self.registry)
@@ -140,19 +175,14 @@ class VexGraphEditor(QtWidgets.QWidget):
         bar = QtWidgets.QHBoxLayout()
         bar.setContentsMargins(8, 6, 8, 6)
         bar.setSpacing(6)
+        # Add Node, Delete Node, Undo and Redo used to be here. They existed
+        # because a docked panel loses its keys to Houdini, so none of Tab,
+        # Delete, Ctrl+Z or Ctrl+Y could be relied on to arrive. Opening in a
+        # real window fixed that, and four buttons duplicating four working
+        # shortcuts is just a narrower canvas.
         for text, slot, tip in (
             ("Open", self.open_graph, "Open a .vexgraph.json"),
             ("Save", self.save_graph, "Save the graph"),
-            ("Add Node", self.search_nodes, "Also: Tab, or double-click the canvas"),
-            # Not only a shortcut: inside a Houdini panel a key press can be
-            # taken by Houdini before this widget sees it, so deleting needs a
-            # route that does not depend on one arriving.
-            ("Delete Node", self.scene.delete_selected,
-             "Delete the selected nodes.\nAlso: Delete key, or right-click a node"),
-            # Buttons as well as shortcuts, because inside a docked pane the
-            # shortcuts are Houdini's before they are ours.
-            ("Undo", self.undo, "Undo the last change (Ctrl+Z)"),
-            ("Redo", self.redo, "Redo (Ctrl+Y)"),
             ("Tidy", self.scene.tidy, "Lay the nodes out again"),
             ("Frame", self.view.frame_all, "Fit everything on screen (F)"),
         ):
@@ -161,22 +191,24 @@ class VexGraphEditor(QtWidgets.QWidget):
             button.clicked.connect(slot)
             bar.addWidget(button)
 
-        # Import VEX and Apply to Wrangle are the two ends of the same idea -
-        # read VEX in, write VEX out - so they sit together rather than at
-        # opposite ends of the bar.
-        self.import_button = QtWidgets.QPushButton("Import VEX")
-        self.import_button.setToolTip(
-            "Paste VEX and see it as nodes.\n"
-            "Anything that will not translate is kept verbatim.")
-        self.import_button.clicked.connect(self.import_vex)
-        bar.addWidget(self.import_button)
-
+        # Import VEX used to be here. It opened a box to paste VEX into and
+        # built a graph from it - which is now what the code pane on the right
+        # does, through the same importer, with the code already in front of
+        # you. Two doors onto one room.
         self.snippets_button = QtWidgets.QPushButton("Snippets")
         self.snippets_button.setToolTip(
             "Ready-made VEX from the tools installed on this machine,\n"
             "opened as nodes so you can read and change it.")
         self.snippets_button.clicked.connect(self.open_snippets)
         bar.addWidget(self.snippets_button)
+
+        self.keep_button = QtWidgets.QPushButton("Save as Snippet")
+        self.keep_button.setToolTip(
+            "Give this expression a name and keep it in the Snippets list,\n"
+            "alongside the ready-made ones. The name is what shows on the "
+            "canvas.")
+        self.keep_button.clicked.connect(self.save_as_snippet)
+        bar.addWidget(self.keep_button)
 
         self.apply_button = QtWidgets.QPushButton("Apply to Wrangle")
         self.apply_button.setToolTip(
@@ -224,6 +256,18 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.status.setFont(theme.ui_font(8))
         self.status.setContentsMargins(10, 4, 10, 4)
 
+        # Which build this is, always on screen. After a reload there is
+        # otherwise no way to tell whether the editor in front of you is the
+        # one you just changed, and guessing wrong wastes the next ten minutes.
+        self.build = QtWidgets.QLabel(f"VEXgraph {version_line()}")
+        self.build.setFont(theme.ui_font(8))
+        self.build.setContentsMargins(10, 4, 10, 4)
+        self.build.setStyleSheet("color: #6f6f6f;")
+        self.build.setToolTip(
+            "The release, and when the newest source file was last written.\n"
+            "The timestamp moves on every edit; the version only when it is "
+            "deliberately raised.")
+
         self.help = QtWidgets.QLabel("")
         self.help.setWordWrap(True)
         self.help.setFont(theme.ui_font(8))
@@ -247,18 +291,23 @@ class VexGraphEditor(QtWidgets.QWidget):
         code_layout = QtWidgets.QVBoxLayout(code_side)
         code_layout.setContentsMargins(0, 0, 0, 0)
         code_layout.setSpacing(0)
-        code_layout.addWidget(self._section_label("Generated VEX"))
+        code_layout.addWidget(
+            self._folding_section("Generated VEX", self.code, "code"))
         code_layout.addWidget(self.code, 1)
-        code_layout.addWidget(self._section_label("Problems"))
+        code_layout.addWidget(
+            self._folding_section("Problems", self.issues, "issues"))
         code_layout.addWidget(self.issues)
-        code_layout.addWidget(self._section_label("About the selected node"))
+        code_layout.addWidget(
+            self._folding_section("About the selected node", self.help, "help"))
         code_layout.addWidget(self.help)
 
         assistant_side = QtWidgets.QWidget()
         assistant_layout = QtWidgets.QVBoxLayout(assistant_side)
         assistant_layout.setContentsMargins(0, 0, 0, 0)
         assistant_layout.setSpacing(0)
-        assistant_layout.addWidget(self._section_label("Ask for a graph"))
+        assistant_layout.addWidget(
+            self._folding_section("Ask for a graph", self.assistant,
+                                  "assistant", container=assistant_side))
         assistant_layout.addWidget(self.assistant, 1)
 
         right.addWidget(code_side)
@@ -285,12 +334,62 @@ class VexGraphEditor(QtWidgets.QWidget):
         splitter.setStretchFactor(2, 2)
         splitter.setSizes([260, 780, 520])
 
+        footer = QtWidgets.QHBoxLayout()
+        footer.setContentsMargins(0, 0, 0, 0)
+        footer.addWidget(self.status, 1)
+        footer.addWidget(self.build)
+
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addLayout(bar)
         layout.addWidget(splitter, 1)
-        layout.addWidget(self.status)
+        layout.addLayout(footer)
+
+    def _folding_section(self, text: str, body: QtWidgets.QWidget, key: str,
+                         container: QtWidgets.QWidget | None = None
+                         ) -> QtWidgets.QLabel:
+        """A heading you can click to fold the panel under it away.
+
+        A docked panel is short, and the library, the code, the problems, the
+        node description and the assistant all want the same vertical room. The
+        section you are not using is exactly the one costing you the space, so
+        each one can be put away and stays that way next time.
+
+        `container` is the widget the splitter sizes, when the body sits inside
+        a wrapper: capping its height is what actually makes the splitter give
+        the room back, rather than leaving a folded section holding its slot.
+        """
+        label = SectionHeader(text)
+        label.setFont(theme.ui_font(8, bold=True))
+        label.setContentsMargins(10, 7, 10, 5)
+        label.setStyleSheet("color: #8a8a8a; background: #202020;")
+        label.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        label.setToolTip("Click to fold this section away")
+
+        outer = container if container is not None else body
+
+        # Tracked here rather than read back from `isVisible()`: a widget whose
+        # window has not been shown yet reports invisible whatever you set, so
+        # asking Qt for the current state would fold the wrong way on the first
+        # click of every session.
+        state = {"folded": self._settings.value(f"folded/{key}", False, type=bool)}
+
+        def apply() -> None:
+            folded = state["folded"]
+            body.setVisible(not folded)
+            label.setText(("▸  " if folded else "▾  ") + text)
+            outer.setMaximumHeight(label.sizeHint().height() if folded
+                                   else QWIDGETSIZE_MAX)
+
+        def toggle() -> None:
+            state["folded"] = not state["folded"]
+            apply()
+            self._settings.setValue(f"folded/{key}", state["folded"])
+
+        label.clicked.connect(toggle)
+        apply()
+        return label
 
     def _section_label(self, text: str) -> QtWidgets.QLabel:
         label = QtWidgets.QLabel(text)
@@ -332,6 +431,16 @@ class VexGraphEditor(QtWidgets.QWidget):
         if self.scene.is_editing or isinstance(
                 focus, (QtWidgets.QLineEdit, QtWidgets.QPlainTextEdit,
                         QtWidgets.QTextEdit, QtWidgets.QAbstractSpinBox)):
+            # Escape in the code pane abandons hand edits. Handled here rather
+            # than in the widget because a QPlainTextEdit ignores Escape, so it
+            # would travel on to whatever is behind - inside Houdini, that is
+            # Houdini.
+            if (focus is self.code and self._code_is_user_written
+                    and event.key() == QtCore.Qt.Key.Key_Escape):
+                if event.type() == QtCore.QEvent.Type.KeyPress:
+                    self.revert_code()
+                event.accept()
+                return True
             if event.type() == QtCore.QEvent.Type.ShortcutOverride:
                 event.accept()
                 return True          # "this key is mine", to Houdini
@@ -347,6 +456,16 @@ class VexGraphEditor(QtWidgets.QWidget):
                 QtCore.Qt.KeyboardModifier.ShiftModifier) else self.undo
         elif control and key == QtCore.Qt.Key.Key_Y:
             action = self.redo
+        elif control and key == QtCore.Qt.Key.Key_C:
+            action = self._copy
+        elif control and key == QtCore.Qt.Key.Key_X:
+            action = self._cut
+        elif control and key == QtCore.Qt.Key.Key_V:
+            action = self._paste
+        elif key == QtCore.Qt.Key.Key_Tab:
+            # Houdini binds Tab to its own node menu, so inside a docked panel
+            # it never reaches the canvas without being claimed here first.
+            action = self._search_at_centre
 
         if action is None:
             return super().eventFilter(watched, event)
@@ -358,6 +477,10 @@ class VexGraphEditor(QtWidgets.QWidget):
     def _install_history(self) -> None:
         self.history = History(self.graph.to_dict())
         self._restoring = False
+        # Copy, cut and paste are deliberately *not* shortcuts here. A shortcut
+        # on this widget fires wherever focus is, so Ctrl+C in the assistant's
+        # text box would copy the selected nodes instead of the selected words.
+        # The key filter above already makes that distinction, so it owns them.
         for keys, slot in ((QtGui.QKeySequence.StandardKey.Undo, self.undo),
                            (QtGui.QKeySequence.StandardKey.Redo, self.redo),
                            ("Ctrl+Y", self.redo)):
@@ -386,6 +509,166 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.set_graph(graph)
         self._show_message(description)
 
+    # ------------------------------------------------- writing code by hand
+
+    def _vex_vocabulary(self) -> list[str]:
+        """Everything worth offering while typing VEX.
+
+        The function names come from the registry rather than a list kept here:
+        it already holds every function `vcc` reports, so the completion is as
+        complete as the node library and cannot drift from it.
+        """
+        words = [d.vex_function for d in self.registry if d.vex_function]
+        words += [
+            "@P", "@N", "@Cd", "@Alpha", "@v", "@up", "@orient", "@scale",
+            "@pscale", "@id", "@name", "@ptnum", "@primnum", "@vtxnum",
+            "@elemnum", "@numpt", "@numprim", "@numvtx", "@numelem",
+            "@Time", "@Frame", "@TimeInc", "@ix", "@iy", "@iz", "@group_",
+            "@P.x", "@P.y", "@P.z",
+        ]
+        words += ["int", "float", "vector", "vector2", "vector4", "matrix",
+                  "matrix2", "matrix3", "string", "dict", "void",
+                  "if", "else", "for", "foreach", "while", "do", "return",
+                  "break", "continue", "function"]
+        return words
+
+    def _code_edited(self) -> None:
+        """The code pane is now the user's; stop generating over it.
+
+        Regeneration runs on a timer while you work, so without this the first
+        thing a typed line meets is the emitter overwriting it. The graph is
+        left exactly as it was until the code is committed - nothing is
+        half-applied.
+        """
+        if self._code_is_user_written:
+            return
+        self._code_is_user_written = True
+        self._emit_timer.stop()
+        self._show_message("Editing the VEX. Ctrl+Enter builds the nodes; "
+                           "Esc goes back to the generated code.")
+
+    def build_from_code(self) -> None:
+        """Turn what is in the code pane into nodes.
+
+        The same importer the Import VEX button and the assistant's write-VEX
+        route use, so hand-written code gets the same treatment as any other:
+        translated where it can be, kept verbatim in Inline VEX where it
+        cannot, and never rejected.
+        """
+        from ..parser import import_vex as run_import              # noqa: PLC0415
+
+        source = self.code.toPlainText().strip()
+        if not source:
+            return
+        try:
+            report = run_import(source, self.registry)
+        except Exception as exc:                                   # noqa: BLE001
+            QtWidgets.QMessageBox.warning(
+                self, "Could not read that VEX",
+                f"{exc}\n\nThe code pane is unchanged.")
+            return
+
+        name = self.graph.name
+        self._code_is_user_written = False
+        self.set_graph(report.graph)
+        self.graph.name = name          # the expression is still the same one
+
+        # Laid out and framed: the nodes arrive at wherever the importer put
+        # them, which for a graph you have never seen is nowhere useful.
+        self.scene.tidy()
+        self.view.frame_all()
+        # Saying *why* something stayed as text is the one thing the old
+        # Import VEX dialog did that this did not. It goes in the status line
+        # and the Problems list rather than a dialog: this runs on every
+        # Ctrl+Enter, and a modal you have to dismiss each time is a worse
+        # tax than the information is worth. It also cannot be dismissed at
+        # all without a screen, which hung the test suite when it was one.
+        message = report.summary()
+        if report.reasons:
+            unique = list(dict.fromkeys(report.reasons))
+            message += f" — {unique[0]}"
+            if len(unique) > 1:
+                message += f" (and {len(unique) - 1} more, listed in Problems)"
+            self._note_inline_reasons(unique)
+        self._show_message(message)
+
+    def _note_inline_reasons(self, reasons: list[str]) -> None:
+        """Add "kept as text, because…" lines under the graph's own problems.
+
+        Not errors - the code compiles and runs. They are the answer to "why is
+        that one node a block of text", which is otherwise something you have
+        to already know to ask.
+        """
+        for reason in reasons:
+            item = QtWidgets.QListWidgetItem(f"Kept as Inline VEX: {reason}")
+            item.setForeground(QtGui.QBrush(QtGui.QColor("#8a8a8a")))
+            self.issues.addItem(item)
+
+    def revert_code(self) -> None:
+        """Throw away hand edits and show the graph's own VEX again."""
+        if not self._code_is_user_written:
+            return
+        self._code_is_user_written = False
+        self._regenerate()
+        self._show_message("Back to the generated VEX.")
+
+    def _export_wrangle_menu(self) -> int:
+        """Refresh Houdini's own snippet menu with everything we can see.
+
+        Houdini builds that menu from the `VEXpressions.txt` files on
+        HOUDINI_PATH, and reads them at startup - so a snippet saved now shows
+        up there after the next Houdini launch, not immediately. Writing it on
+        every open rather than on request is what keeps that gap to one
+        restart instead of "whenever somebody remembers to export".
+        """
+        try:
+            _, count = snippets.write_vexpressions()
+        except OSError:
+            return 0        # read-only checkout; the tool's own list is intact
+        return count
+
+    def save_as_snippet(self) -> None:
+        """Keep this expression in the Snippets list, under a name you choose.
+
+        Saved as VEX rather than as a graph, so it reopens through the same
+        importer as every other snippet: one way in, and a snippet of your own
+        behaves exactly like one of OD's.
+        """
+        emission = generate(self.graph)
+        if not emission.ok:
+            QtWidgets.QMessageBox.warning(
+                self, "Not saved",
+                "This graph does not compile yet. Fix the problems listed on "
+                "the right, then save it.")
+            return
+
+        name, agreed = QtWidgets.QInputDialog.getText(
+            self, "Save as snippet", "Name for this expression:",
+            QtWidgets.QLineEdit.EchoMode.Normal, self.graph.name)
+        name = name.strip()
+        if not agreed or not name:
+            return
+
+        try:
+            written = snippets.save_user_snippet(
+                name, emission.code,
+                description=f"Saved from VEXgraph — {len(self.graph.nodes)} nodes.")
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(self, "Not saved",
+                                          f"Could not write the snippet: {exc}")
+            return
+        if not written:
+            QtWidgets.QMessageBox.warning(
+                self, "Not saved", "No snippet store could be written to.")
+            return
+
+        self.graph.name = name
+        self.view.viewport().update()
+        self._export_wrangle_menu()
+        self._show_message(
+            f"Saved “{name}”. In the Snippets list now; in the wrangle's own "
+            f"menu after the next Houdini restart.")
+
     def open_help_for(self, node_type: str) -> None:
         """Open Houdini's page for a node, or say why there is not one.
 
@@ -413,6 +696,45 @@ class VexGraphEditor(QtWidgets.QWidget):
             f"Not every node maps to a documented function: operators, loops "
             f"and branches are part of the VEX language itself, and a few "
             f"functions the compiler knows are undocumented.")
+
+    def _search_at_centre(self) -> None:
+        self._search_at(self.view.mapToScene(self.view.viewport().rect().center()),
+                        None)
+
+    def _copy(self) -> None:
+        copied = self.scene.copy_selected()
+        self._show_message(f"Copied {copied} node{'s' if copied != 1 else ''}."
+                           if copied else "Nothing selected to copy.")
+
+    def _cut(self) -> None:
+        if self.scene.copy_selected():
+            self.scene.delete_selected()
+
+    def _paste(self) -> None:
+        """Paste under the pointer when it is over the canvas, else offset.
+
+        Pasting on top of the original is confusing - you cannot see that
+        anything happened - so the copy always lands somewhere you can tell it
+        apart from what it came from.
+        """
+        at = None
+        cursor = self.view.mapFromGlobal(QtGui.QCursor.pos())
+        if self.view.rect().contains(cursor):
+            at = self.view.mapToScene(cursor)
+        pasted = self.scene.paste(at)
+        self._show_message(f"Pasted {pasted} node{'s' if pasted != 1 else ''}."
+                           if pasted else "There are no nodes on the clipboard.")
+
+    def _describe_in_library(self, node_type: str) -> None:
+        """Point the library's detail pane at the node just selected.
+
+        Deselecting deliberately leaves the last description on screen rather
+        than blanking it: you often click empty canvas on the way to somewhere
+        else, and losing the help you were reading each time is worse than
+        showing help for a node that is no longer highlighted.
+        """
+        if node_type:
+            self.browser.describe(node_type)
 
     def _record_history(self) -> None:
         if not self._restoring:
@@ -444,10 +766,13 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.scene.graph_changed.connect(self._schedule)
         self.scene.message.connect(self._show_message)
         self.scene.selection_described.connect(self.help.setText)
+        self.scene.selection_typed.connect(self._describe_in_library)
         self.scene.selectionChanged.connect(self._sync_highlight)
         self.view.node_search_requested.connect(self._search_at)
         self.view.help_requested.connect(self.open_help_for)
         self.code.line_clicked.connect(self._select_from_code)
+        self.code.edited.connect(self._code_edited)
+        self.code.commit_requested.connect(self.build_from_code)
         self.issues.itemClicked.connect(self._select_from_issue)
         self.apply_button.clicked.connect(self._apply)
         self.run_over.currentTextChanged.connect(self._set_run_over)
@@ -493,7 +818,11 @@ class VexGraphEditor(QtWidgets.QWidget):
         # Kept so the live apply and the compile check do not each generate the
         # same text again a moment later.
         self._last_emission = emission
-        self.code.set_code(emission.code, emission.line_nodes)
+        # Hand-written code is never overwritten. The graph still emits - the
+        # problems list and the wrangle stay honest about what the *graph*
+        # says - but the pane keeps what was typed until it is committed.
+        if not self._code_is_user_written:
+            self.code.set_code(emission.code, emission.line_nodes)
         self._report(emission.issues)
         self._sync_highlight()
 
@@ -593,24 +922,6 @@ class VexGraphEditor(QtWidgets.QWidget):
                 continue
             return
 
-    def import_vex(self) -> None:
-        """Paste VEX, see the nodes. The reverse direction, for learning."""
-        from ..parser import import_vex as run_import  # noqa: PLC0415
-
-        source, accepted = _ask_for_vex(self)
-        if not accepted or not source.strip():
-            return
-        report = run_import(source, self.registry)
-        self.set_graph(report.graph)
-        self._show_message(report.summary())
-        if report.reasons:
-            unique = list(dict.fromkeys(report.reasons))[:4]
-            detail = "\n".join(f"- {reason}" for reason in unique)
-            QtWidgets.QMessageBox.information(
-                self, "Imported, with some code kept as-is",
-                f"{report.summary()}\n\n{detail}\n\n"
-                f"Those parts are in Inline VEX nodes, unchanged.")
-
     def open_graph(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, "Open graph", "", "VEXgraph (*.json)")
@@ -689,33 +1000,6 @@ class VexGraphEditor(QtWidgets.QWidget):
             return
         self._applied_code = emission.code
         self.applied.emit(emission.code)
-
-
-def _ask_for_vex(parent) -> tuple[str, bool]:
-    """A paste box. Bigger than QInputDialog gives, because VEX has newlines."""
-    dialog = QtWidgets.QDialog(parent)
-    dialog.setWindowTitle("Import VEX")
-    dialog.resize(680, 420)
-
-    editor = QtWidgets.QPlainTextEdit()
-    editor.setFont(theme.mono_font(9))
-    editor.setPlaceholderText("Paste a wrangle snippet here.")
-    buttons = QtWidgets.QDialogButtonBox(
-        QtWidgets.QDialogButtonBox.StandardButton.Ok
-        | QtWidgets.QDialogButtonBox.StandardButton.Cancel)
-    buttons.accepted.connect(dialog.accept)
-    buttons.rejected.connect(dialog.reject)
-
-    layout = QtWidgets.QVBoxLayout(dialog)
-    layout.addWidget(QtWidgets.QLabel(
-        "Anything that cannot be turned into nodes is kept verbatim."))
-    layout.addWidget(editor, 1)
-    layout.addWidget(buttons)
-
-    accepted = dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted
-    return editor.toPlainText(), accepted
-
-
 def run_standalone(graph_path: str = "") -> int:
     """Open the editor outside Houdini, which is how it gets developed."""
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
