@@ -267,6 +267,17 @@ class Importer:
         # does declare its variable, so materialising one would duplicate it.
         self._value_aliases: dict[str, tuple[str, str]] = {}
         self._declared_attributes: dict[str, str] = {}
+        # How deep in branch/loop bodies lowering currently is, and how deep
+        # each variable was declared. VOP's rule for state that crosses a
+        # scope: the variable lives outside, the branch only assigns it. An
+        # alias is a claim that a wire IS the variable, and a wire from inside
+        # a body does not exist outside it - so writes from a deeper scope go
+        # through a real Set Variable instead.
+        self._depth = 0
+        self._declared_depth: dict[str, int] = {}
+        # Set Variable nodes made for a call statement's out-arguments; the
+        # chain appends them right after the statement they belong to.
+        self._pending_setters: list[str] = []
         self._counter = 0
         # Where the next node in run order attaches: (node id, exec pin). Kept
         # current while a statement lowers so that a call with side effects
@@ -323,9 +334,12 @@ class Importer:
             self._cursor = (previous, pin)
             try:
                 node_ids = [self._statement(statement)]
+                node_ids += self._pending_setters
+                self._pending_setters = []
             except Unsupported as exc:
                 self._rollback(mark)
                 self._cursor = (previous, pin)   # spliced nodes are gone too
+                self._pending_setters = []       # theirs went with the rollback
                 # An inlined statement may need declarations put back first,
                 # so this is a run of nodes rather than one.
                 node_ids = (self._inline_declaration(statement, str(exc))
@@ -349,8 +363,12 @@ class Importer:
         statement of its own body, turning the sequence inside out.
         """
         saved = self._cursor
-        tail = self._chain(previous, statements, pin=pin)
-        self._cursor = saved
+        self._depth += 1
+        try:
+            tail = self._chain(previous, statements, pin=pin)
+        finally:
+            self._depth -= 1
+            self._cursor = saved
         return tail
 
     def _inline_declaration(self, statement: Statement,
@@ -379,6 +397,7 @@ class Importer:
 
         vex_type = statement.type + ("[]" if statement.is_array else "")
         self.variables[statement.name] = vex_type
+        self._declared_depth[statement.name] = self._depth
         maker = self.graph.add("var_make", self._name("make"),
                                name=statement.name, type=vex_type)
         self._declared_by[statement.name] = maker.id
@@ -482,6 +501,7 @@ class Importer:
         if value.is_port and value.type != vex_type:
             self._retype_to(value, vex_type)
         self.variables[statement.name] = vex_type
+        self._declared_depth[statement.name] = self._depth
 
         # `float d = xyzdist(...)` is one node in a graph, not a call plus a
         # variable: the name is just how the code refers to that output. Only
@@ -966,6 +986,11 @@ class Importer:
         definition = self.registry.require(signature.node_type)
         node = self.graph.add(signature.node_type,
                               self._name(signature.node_type.replace("vex_", "")))
+        # (variable, output socket) pairs that must become Set Variable nodes
+        # right after this call runs - out-arguments writing to a variable
+        # declared in an outer scope. Collected during the slot walk, spliced
+        # once the call itself is in the run order.
+        setters: list[tuple[str, str]] = []
 
         # A node with a Type setting (Fit Range's To Type, say) has to be told
         # which overload this call is before anything is wired, or the sockets
@@ -998,7 +1023,18 @@ class Importer:
                 socket = definition.output(slot.name)
                 if socket is not None and socket.reads:
                     self._feed(node.id, socket.reads, self._expression(argument))
-                self._alias(argument.name, node.id, slot.name)
+                name = argument.name
+                if (name in self._declared_by
+                        and self._declared_depth.get(name, 0) < self._depth):
+                    # VOP's rule for state crossing a scope: the variable
+                    # lives outside, this call only assigns it. An alias here
+                    # would claim a wire from inside the branch as the
+                    # variable's value everywhere - which is exactly the
+                    # "comes from inside the If, used outside it" refusal the
+                    # emitter then makes, on a graph already built.
+                    setters.append((name, slot.name))
+                else:
+                    self._alias(name, node.id, slot.name)
 
         # A call with side effects found inside an expression still has to
         # *run*. Its arguments were fed above - any exec nodes among them are
@@ -1010,11 +1046,37 @@ class Importer:
                 self.graph.connect(at, at_pin, node.id, "exec", is_exec=True)
                 self._cursor = (node.id, "exec")
 
+        for name, out_socket in setters:
+            setter = self.graph.add("var_set", self._name("set"),
+                                    name=name, type=self.variables[name])
+            out_type = self.graph.socket_type(node.id, out_socket,
+                                              is_input=False)
+            self._feed(setter.id, "value",
+                       Value(node=node.id, socket=out_socket, type=out_type))
+            if chained_by_caller:
+                # The call node itself is wired by _chain after we return, so
+                # these must follow it there rather than land before it here.
+                self._pending_setters.append(setter.id)
+            else:
+                at, at_pin = self._cursor
+                if at:
+                    self.graph.connect(at, at_pin, setter.id, "exec",
+                                       is_exec=True)
+                    self._cursor = (setter.id, "exec")
+
         if not signature.result:
             return Value(node=node.id, socket="", type="")
         output = definition.output(signature.result)
-        return Value(node=node.id, socket=signature.result,
-                     type=output.type if output else "float")
+        out_type = output.type if output else "float"
+        if out_type in (vextypes.ANY, vextypes.ANY_ARRAY):
+            # "any" is a definition-side placeholder, never a real type. Left
+            # unresolved it poisoned everything downstream: width arithmetic
+            # treated it as nothing (an operator chain over two attribute
+            # reads came out int), and the wiring gate let it through
+            # unchecked. The graph resolves it from the node's Type setting.
+            out_type = self.graph.socket_type(node.id, signature.result,
+                                              is_input=False)
+        return Value(node=node.id, socket=signature.result, type=out_type)
 
     def _as_setting(self, argument: Expr, kind: str) -> str:
         """A template argument that is a node setting must be a constant."""
@@ -1166,9 +1228,16 @@ class Importer:
         if isinstance(expr, Call):
             signature = self._choose_signature(expr)
             if signature is not None and signature.result:
-                socket = self.registry.require(
-                    signature.node_type).output(signature.result)
+                definition = self.registry.require(signature.node_type)
+                socket = definition.output(signature.result)
                 if socket:
+                    if socket.type in (vextypes.ANY, vextypes.ANY_ARRAY):
+                        # A polymorphic node's best guess before placement is
+                        # its Type setting's default; "any" is not an answer.
+                        setting = definition.param("type")
+                        base = setting.default if setting else "float"
+                        return (f"{base}[]" if socket.type == vextypes.ANY_ARRAY
+                                else base)
                     return socket.type
         return "float"
 

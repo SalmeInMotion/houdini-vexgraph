@@ -379,6 +379,39 @@ def test_a_loop_keeps_the_variable_name_the_body_text_uses(registry):
     assert "for (int i = 0" in code
 
 
+def test_polymorphic_results_never_type_as_any(registry):
+    """`point()/point() * 0.1` must come out float end to end.
+
+    The unresolved "any" on a polymorphic node's output poisoned width
+    arithmetic (the divide typed int) and slid through the wiring gate,
+    because "any" connects to everything. Resolving it at placement is what
+    lets the declared type flow back through the whole operator chain.
+    """
+    code, report = imported(
+        'float decay = point(0, "life", @ptnum) / point(0, "age", @ptnum) '
+        "* 0.1;\n@pscale = decay;", registry)
+    assert report.inlined == 0, report.reasons
+    assert "vector" not in code
+    assert code.count("float ") == 2, "both reads declare as float"
+
+
+def test_state_written_inside_a_branch_lives_outside_it(registry):
+    """VOP's rule: the variable lives outside; the branch only assigns it.
+
+    An out-argument used to rebind the variable to a wire from inside the
+    branch, and reading it afterwards was refused - "comes from inside the
+    If, used outside it" - on a graph that was already built. Writing through
+    a real Set Variable keeps the state where the original declared it.
+    """
+    code, report = imported(
+        "float vals[];\n"
+        "if (@P.y > 0) { append(vals, @P.y); }\n"
+        "f@n = len(vals);", registry)
+    assert report.inlined == 0, report.reasons
+    # The assignment stays inside the branch; the read stays outside.
+    assert code.index("{") < code.index("vals = ") < code.index("}")
+
+
 def test_matrix3_attributes_survive_the_round_trip(registry):
     code, report = imported("3@inertia = matrix3(1);", registry)
     assert report.inlined == 0, report.reasons
