@@ -1253,3 +1253,18 @@ def test_building_from_code_never_opens_a_blocking_dialog(editor):
     assert any("Kept as Inline VEX" in text for text in listed), \
         "the reason must still be reported, just not in a dialog"
     assert "while" in editor.status.text() or "inline" in editor.status.text().lower()
+
+
+def test_released_nodes_settle_onto_the_grid(editor):
+    """Dragged nodes snap on release, the way Houdini's canvas settles them."""
+    from vexgraph.ui import theme
+
+    item = editor.scene.add_node("attrib_get", QtCore.QPointF(0, 0))
+    item.setPos(QtCore.QPointF(37.0, 41.0))
+    item.setSelected(True)
+    editor.scene._snap_selection()
+
+    step = theme.GRID_SPACING
+    assert item.pos().x() % step == 0 and item.pos().y() % step == 0
+    # And the graph document followed the item, so the snap survives a save.
+    assert item.node.pos == (item.pos().x(), item.pos().y())

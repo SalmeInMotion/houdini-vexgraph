@@ -16,8 +16,12 @@ from PySide6 import QtCore
 
 from ..graph import Graph
 
-COLUMN_GAP = 70
-ROW_GAP = 26
+# Wide gaps on purpose. Nodes packed edge to edge read as one solid mass, and
+# the wires between neighbouring columns have no room to be seen as wires; the
+# gap is what makes the flow legible. Both are multiples of the canvas grid so
+# an arranged graph lands on it, the same way Houdini's own layouts do.
+COLUMN_GAP = 130
+ROW_GAP = 52
 BARYCENTRE_PASSES = 4
 
 

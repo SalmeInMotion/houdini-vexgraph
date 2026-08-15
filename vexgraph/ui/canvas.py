@@ -367,6 +367,23 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 self.connect_ports(source_port, target)
             return
         super().mouseReleaseEvent(event)
+        self._snap_selection()
+
+    def _snap_selection(self) -> None:
+        """Settle dropped nodes onto the grid, the way Houdini's canvas does.
+
+        On release rather than during the drag: snapping while moving makes
+        the node stutter under the cursor, and the point of the grid is tidy
+        resting places, not tidy journeys.
+        """
+        step = theme.GRID_SPACING
+        for item in self.selectedItems():
+            if not isinstance(item, NodeItem):
+                continue
+            snapped = QtCore.QPointF(round(item.pos().x() / step) * step,
+                                     round(item.pos().y() / step) * step)
+            if snapped != item.pos():
+                item.setPos(snapped)
 
     def cancel_link_drag(self) -> None:
         if self._drag is not None:
