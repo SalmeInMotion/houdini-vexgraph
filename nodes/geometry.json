@@ -687,6 +687,60 @@
         "gather",
         "array"
       ]
+    },
+    {
+      "type": "pc_filter",
+      "category": "Point Clouds",
+      "label": "Point Cloud Filter",
+      "summary": "Averages a channel over the points a pcopen found.",
+      "help": "The usual way to read a smoothed value out of a point cloud: open with pcopen, then filter the channel you care about.",
+      "params": [
+        {
+          "name": "channel",
+          "label": "Channel",
+          "kind": "attrib",
+          "default": "P"
+        },
+        {
+          "name": "type",
+          "label": "Type",
+          "kind": "menu",
+          "default": "vector",
+          "menu": [
+            "float",
+            "int",
+            "vector",
+            "vector2",
+            "vector4"
+          ],
+          "retypes": [
+            "result"
+          ]
+        }
+      ],
+      "inputs": [
+        {
+          "name": "handle",
+          "type": "int",
+          "label": "Handle",
+          "default": "0"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "any",
+          "label": "Filtered"
+        }
+      ],
+      "expr": "pcfilter({handle}, \"{channel}\")",
+      "tags": [
+        "point cloud",
+        "pcfilter",
+        "average",
+        "smooth",
+        "blur"
+      ]
     }
   ]
 }

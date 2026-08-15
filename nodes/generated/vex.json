@@ -29413,6 +29413,36 @@
    "code": "vector4 {result} = quaternion({angle}, {axis});"
   },
   {
+   "type": "vex_quaternion_3",
+   "label": "quaternion",
+   "kind": "pure",
+   "category": "VEX / math",
+   "tier": 2,
+   "summary": "Creates a quaternion from a 3x3 rotation matrix.",
+   "tags": [
+    "math",
+    "quaternion",
+    "rotation",
+    "matrix"
+   ],
+   "inputs": [
+    {
+     "name": "rotations",
+     "type": "matrix3",
+     "label": "Rotation Matrix",
+     "default": "matrix3(1)"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "type": "vector4",
+     "label": "Result"
+    }
+   ],
+   "code": "vector4 {result} = quaternion({rotations});"
+  },
+  {
    "type": "vex_quaterniontoeuler",
    "label": "quaterniontoeuler",
    "kind": "pure",

@@ -1179,6 +1179,106 @@
       ]
     },
     {
+      "type": "is_not_equal",
+      "category": "Compare",
+      "label": "Is Not Equal To",
+      "summary": "True when the two values differ.",
+      "inputs": [
+        {
+          "name": "a",
+          "type": "float",
+          "label": "A",
+          "default": "0"
+        },
+        {
+          "name": "b",
+          "type": "float",
+          "label": "B",
+          "default": "0"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "int",
+          "label": "True/False"
+        }
+      ],
+      "expr": "{a} != {b}",
+      "tags": [
+        "compare",
+        "different",
+        "not equal",
+        "!="
+      ]
+    },
+    {
+      "type": "is_greater_equal",
+      "category": "Compare",
+      "label": "Is Greater Or Equal",
+      "summary": "True when A is at least B.",
+      "inputs": [
+        {
+          "name": "a",
+          "type": "float",
+          "label": "A",
+          "default": "0"
+        },
+        {
+          "name": "b",
+          "type": "float",
+          "label": "B",
+          "default": "0"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "int",
+          "label": "True/False"
+        }
+      ],
+      "expr": "{a} >= {b}",
+      "tags": [
+        "compare",
+        "at least",
+        ">="
+      ]
+    },
+    {
+      "type": "is_less_equal",
+      "category": "Compare",
+      "label": "Is Less Or Equal",
+      "summary": "True when A is at most B.",
+      "inputs": [
+        {
+          "name": "a",
+          "type": "float",
+          "label": "A",
+          "default": "0"
+        },
+        {
+          "name": "b",
+          "type": "float",
+          "label": "B",
+          "default": "0"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "int",
+          "label": "True/False"
+        }
+      ],
+      "expr": "{a} <= {b}",
+      "tags": [
+        "compare",
+        "at most",
+        "<="
+      ]
+    },
+    {
       "type": "both_true",
       "category": "Compare",
       "label": "Both True",

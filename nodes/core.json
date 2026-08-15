@@ -76,6 +76,12 @@
       "help": "Count starts at 0, so repeating 5 times gives you 0, 1, 2, 3, 4.",
       "inputs": [
         {
+          "name": "start",
+          "type": "int",
+          "label": "Start",
+          "default": "0"
+        },
+        {
           "name": "count",
           "type": "int",
           "label": "Times",
@@ -91,7 +97,7 @@
           "desc": "Which time round the loop this is. Only exists inside."
         }
       ],
-      "code": "for (int {index} = 0; {index} < {count}; {index}++)\n{\n    {body}\n}",
+      "code": "for (int {index} = {start}; {index} < {count}; {index}++)\n{\n    {body}\n}",
       "tags": [
         "loop",
         "for",
@@ -403,6 +409,74 @@
         "variable",
         "read",
         "load"
+      ]
+    },
+    {
+      "type": "choose",
+      "category": "Flow",
+      "label": "Choose",
+      "summary": "Picks A when the condition is true, B when it is false.",
+      "help": "The dataflow twin of an If: an If runs different statements, Choose picks between two values. VOP calls this Two Way Switch.",
+      "params": [
+        {
+          "name": "type",
+          "label": "Type",
+          "kind": "menu",
+          "default": "float",
+          "menu": [
+            "float",
+            "int",
+            "vector",
+            "vector2",
+            "vector4",
+            "string",
+            "matrix2",
+            "matrix3",
+            "matrix",
+            "dict"
+          ],
+          "retypes": [
+            "a",
+            "b",
+            "result"
+          ]
+        }
+      ],
+      "inputs": [
+        {
+          "name": "condition",
+          "type": "int",
+          "label": "Condition",
+          "default": "0"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "label": "If True",
+          "default": "0"
+        },
+        {
+          "name": "b",
+          "type": "any",
+          "label": "If False",
+          "default": "0"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "any",
+          "label": "Result"
+        }
+      ],
+      "expr": "({condition} ? {a} : {b})",
+      "tags": [
+        "ternary",
+        "select",
+        "switch",
+        "two way",
+        "condition",
+        "pick"
       ]
     },
     {

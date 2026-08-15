@@ -123,7 +123,12 @@ class FunctionIndex:
     """
 
     def __init__(self, registry: Registry):
-        self.by_call: dict[tuple[str, int], Signature] = {}
+        # Every signature per (function, arity), in tier order. VEX overloads
+        # freely on argument *types* at the same arity - quaternion() takes an
+        # angle-axis pair or a matrix3 - and keeping only the first signature
+        # meant the other overloads did not exist as far as importing was
+        # concerned, however correct the original code was.
+        self.by_call: dict[tuple[str, int], list[Signature]] = {}
         self.by_operator: dict[tuple[str, int], str] = {}
         for definition in sorted(registry, key=lambda d: (d.tier, d.type)):
             self._index(definition)
@@ -163,8 +168,7 @@ class FunctionIndex:
         slots = tuple(self._slot(definition, part) for part in parts)
         if any(slot is None for slot in slots):
             return
-        self.by_call.setdefault(
-            (function, len(parts)),
+        self.by_call.setdefault((function, len(parts)), []).append(
             Signature(definition.type, slots, result))
 
     @staticmethod
@@ -203,8 +207,8 @@ class FunctionIndex:
                     return op
         return ""
 
-    def call(self, name: str, arity: int) -> Signature | None:
-        return self.by_call.get((name, arity))
+    def call(self, name: str, arity: int) -> list[Signature]:
+        return self.by_call.get((name, arity), [])
 
     def operator(self, op: str, arity: int) -> str | None:
         return self.by_operator.get((op, arity))
@@ -262,6 +266,7 @@ class Importer:
         # emitted code. Loop indices are deliberately not in here - a loop node
         # does declare its variable, so materialising one would duplicate it.
         self._value_aliases: dict[str, tuple[str, str]] = {}
+        self._declared_attributes: dict[str, str] = {}
         self._counter = 0
         # Where the next node in run order attaches: (node id, exec pin). Kept
         # current while a statement lowers so that a call with side effects
@@ -276,6 +281,15 @@ class Importer:
     def run(self, statements: list[Statement]) -> Report:
         self._reassigned = _reassigned_names(statements)
         self._loop_declared = _loop_variable_names(statements)
+        # One prefixed mention types the attribute for the whole snippet,
+        # exactly as the wrangle compiler reads it. Scanned from the source
+        # text rather than the tree so mentions inside inline-bound statements
+        # count too.
+        self._declared_attributes = {
+            match.group(3): PREFIX_TYPES.get(match.group(1), "float")
+            for match in re.finditer(r"\b([fivpu234sd])(\[\])?@(\w+)", self.source)
+            if match.group(3) not in STANDARD_ATTRIBUTES
+        }
         start = self.graph.add("start", "start")
         self._chain(start.id, statements)
         self._prune_dead()
@@ -560,8 +574,7 @@ class Importer:
     def _call_statement(self, statement: ExprStatement) -> str:
         if not isinstance(statement.value, Call):
             raise Unsupported("an expression on its own does nothing")
-        signature = self.index.call(statement.value.name,
-                                    len(statement.value.args))
+        signature = self._choose_signature(statement.value)
         if signature is None:
             raise Unsupported(f"no node calls {statement.value.name}()")
         placed = self._place_call(signature, statement.value,
@@ -577,7 +590,8 @@ class Importer:
     def _if(self, statement: If) -> str:
         node_type = "if_else" if statement.otherwise else "if"
         node = self.graph.add(node_type, self._name("branch"))
-        self._feed(node.id, "condition", self._expression(statement.condition))
+        self._feed(node.id, "condition",
+                   self._as_condition(self._expression(statement.condition)))
         self._chain_body(node.id, statement.then, pin="then")
         if statement.otherwise:
             self._chain_body(node.id, statement.otherwise, pin="otherwise")
@@ -588,13 +602,15 @@ class Importer:
         if count is None:
             raise Unsupported(
                 "only counted loops (for i = 0; i < n; i++) map")
-        variable, limit = count
+        variable, start, limit = count
         node = self.graph.add("for_range", self._name("repeat"))
         # The emitter names the loop variable from the node's title. Keeping
         # the original name is not cosmetic: an inline statement in the body
         # still says `i`, and a loop emitted as `repeat` leaves that text
         # referring to a variable that no longer exists.
         node.title = variable
+        if start != "0":
+            node.params["start"] = start
         self._feed(node.id, "count", self._expression(limit))
         self.variables[variable] = "int"
         self._loop_indices[variable] = (node.id, "index")
@@ -613,12 +629,15 @@ class Importer:
 
         `<=` runs one more time than `<`, so the count becomes `N + 1` rather
         than `N`; the extra term is built here instead of being special-cased
-        downstream, so the loop node stays a plain counted loop.
+        downstream, so the loop node stays a plain counted loop. A literal
+        non-zero start (`for (int i = 1; ...)`) is the loop node's Start
+        setting - common enough in hand-written VEX that refusing it cost the
+        whole body.
         """
         setup, condition, step = statement.setup, statement.condition, statement.step
         if not isinstance(setup, Declare) or setup.type != "int":
             return None
-        if not (isinstance(setup.value, Literal) and setup.value.text == "0"):
+        if not (isinstance(setup.value, Literal) and setup.value.kind == "int"):
             return None
         if not (isinstance(condition, Binary) and condition.op in ("<", "<=", "!=")
                 and isinstance(condition.left, Name)
@@ -639,7 +658,7 @@ class Importer:
             else:
                 limit = Binary(op="+", left=limit,
                                right=Literal(text="1", kind="int"))
-        return setup.name, limit
+        return setup.name, setup.value.text, limit
 
     def _foreach(self, statement: ForEach) -> str:
         element = statement.value_type or self._element_type(statement.array)
@@ -693,6 +712,20 @@ class Importer:
                         vextypes.explain_mismatch(value.type, wanted)
                         or f"a {value.type} cannot feed a {wanted} input")
         self.graph.connect(value.node, value.socket, node_id, socket)
+
+    def _as_condition(self, value: Value) -> Value:
+        """A float driving a condition means `!= 0`, never truncation.
+
+        VEX treats any non-zero value as true, so `if (rand(x))` is true for
+        0.7 - and the generic float->int shim truncates, which would turn that
+        same 0.7 into false. Same emitted meaning, spelled the way VEX reads
+        it: an explicit comparison against zero.
+        """
+        if value.is_port and value.type == "float":
+            node = self.graph.add("is_not_equal", self._name("istrue"), b="0")
+            self.graph.connect(value.node, value.socket, node.id, "a")
+            return Value(node=node.id, socket="result", type="int")
+        return value
 
     def _truncate(self, value: Value) -> Value:
         """A visible float->int conversion, in the direction VEX itself goes.
@@ -789,7 +822,7 @@ class Importer:
             return self._operator(expr.op, [expr.left, expr.right])
 
         if isinstance(expr, Call):
-            signature = self.index.call(expr.name, len(expr.args))
+            signature = self._choose_signature(expr)
             if signature is None:
                 raise Unsupported(f"no node calls {expr.name}()")
             return self._place_call(signature, expr)
@@ -809,7 +842,18 @@ class Importer:
             return Value(node=node.id, socket="item", type=element)
 
         if isinstance(expr, Ternary):
-            raise Unsupported("a ? b : c has no node; use If")
+            # The dataflow twin of an If: VOP's Two Way Switch. Modelling it
+            # matters beyond the expression itself, because a ternary in an
+            # initialiser used to send the whole declaration inline.
+            then_value = self._expression(expr.then)
+            else_value = self._expression(expr.otherwise)
+            chosen = self._widest([expr.then, expr.otherwise])
+            node = self.graph.add("choose", self._name("choose"), type=chosen)
+            self._feed(node.id, "condition",
+                       self._as_condition(self._expression(expr.condition)))
+            self._feed(node.id, "a", then_value)
+            self._feed(node.id, "b", else_value)
+            return Value(node=node.id, socket="result", type=chosen)
 
         raise Unsupported(f"{type(expr).__name__} is not modelled")
 
@@ -852,6 +896,70 @@ class Importer:
         return Value(node=node.id, socket=output.name,
                      type=output.type if output.type != vextypes.ANY
                      else result_type)
+
+    def _choose_signature(self, expr: Call):
+        """The overload whose slots best fit what is actually being passed.
+
+        VEX overloads on argument types at the same arity - `quaternion()`
+        takes an angle and an axis or a matrix3 - and the old index kept only
+        the first signature per arity, so the rest did not exist as far as
+        importing was concerned. Scoring: an exact type match beats a
+        polymorphic socket beats a widening; anything the wiring could not
+        serve disqualifies. Ties keep tier order, so curated nodes still win.
+        """
+        candidates = self.index.call(expr.name, len(expr.args))
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+
+        best, best_score = None, -1
+        for signature in candidates:
+            definition = self.registry.require(signature.node_type)
+            score, fits = 0, True
+            for slot, argument in zip(signature.slots, expr.args):
+                if slot.kind == "in":
+                    socket = definition.input(slot.name)
+                    wanted = socket.type if socket else ""
+                    got = self._type_of(argument)
+                    if wanted in (vextypes.ANY, vextypes.ANY_ARRAY):
+                        score += 2
+                    elif got == wanted:
+                        score += 3
+                    elif vextypes.can_connect(got, wanted):
+                        score += 1
+                    elif got == "float" and wanted == "int":
+                        score += 1                    # a truncate shim serves it
+                    else:
+                        fits = False
+                        break
+                elif slot.kind in ("param", "param_str"):
+                    if not (isinstance(argument, Literal)
+                            or (isinstance(argument, Attribute)
+                                and re.fullmatch(r"OpInput[1-4]", argument.name))):
+                        fits = False
+                        break
+                    score += 3    # a literal in a setting is an exact fit too
+                elif slot.kind == "out":
+                    if not isinstance(argument, Name):
+                        fits = False
+                        break
+                    score += 3
+                elif slot.kind == "fixed":
+                    # The template hard-codes this argument (`removepoint(0,
+                    # {pt})`), so the call only fits when it passes exactly
+                    # that. Not scoring these let a generated node with a real
+                    # socket outbid the curated statement it should lose to.
+                    if (not isinstance(argument, Literal)
+                            or argument.text.strip('"') != slot.name):
+                        fits = False
+                        break
+                    score += 3
+            if fits and score > best_score:
+                best, best_score = signature, score
+        # Nothing fits cleanly: keep the old first-wins behaviour and let the
+        # wiring gates downgrade the statement honestly if they must.
+        return best if best is not None else candidates[0]
 
     def _place_call(self, signature, expr: Call, *,
                     chained_by_caller: bool = False) -> Value:
@@ -1009,7 +1117,13 @@ class Importer:
         else:
             base = (expr.name.split("_", 1)[-1] if expr.name.startswith("opinput")
                     else expr.name)
-            element = STANDARD_ATTRIBUTES.get(base, "float")
+            element = STANDARD_ATTRIBUTES.get(base)
+            if element is None:
+                # Declared once anywhere in the snippet - `v@dir;` at the top,
+                # say - and every later bare `@dir` means that type. Guessing
+                # float for those wired vectors into float sockets all over,
+                # which surfaced as type mismatches far from the real cause.
+                element = self._declared_attributes.get(base, "float")
         # `i[]@hits` binds a list of ints, not one.
         return f"{element}[]" if getattr(expr, "is_array", False) else element
 
@@ -1050,8 +1164,8 @@ class Importer:
         if isinstance(expr, Index):
             return self._element_type(expr.target)
         if isinstance(expr, Call):
-            signature = self.index.call(expr.name, len(expr.args))
-            if signature and signature.result:
+            signature = self._choose_signature(expr)
+            if signature is not None and signature.result:
                 socket = self.registry.require(
                     signature.node_type).output(signature.result)
                 if socket:

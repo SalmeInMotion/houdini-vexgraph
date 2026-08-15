@@ -93,16 +93,17 @@ def test_precedence_is_c_precedence():
 def test_index_uses_the_call_arity_not_the_socket_count(registry):
     """`xyzdist(a,b,c,d)` has four arguments but the node has one input."""
     index = FunctionIndex(registry)
-    signature = index.call("xyzdist", 4)
-    assert signature is not None
+    signatures = index.call("xyzdist", 4)
+    assert signatures, "the four-argument overload must be indexed"
+    signature = signatures[0]           # tier order: the curated node first
     assert signature.node_type == "closest_surface_point"
     assert [s.kind for s in signature.slots] == ["param", "in", "out", "out"]
 
 
 def test_index_prefers_the_curated_node_over_the_generated_one(registry):
     index = FunctionIndex(registry)
-    assert index.call("fit", 5).node_type == "fit_range"
-    assert index.call("nearpoints", 4).node_type == "nearest_points"
+    assert index.call("fit", 5)[0].node_type == "fit_range"
+    assert index.call("nearpoints", 4)[0].node_type == "nearest_points"
 
 
 def test_index_knows_the_operators(registry):
@@ -289,13 +290,59 @@ def test_do_while_is_kept_whole(registry):
 
 
 def test_a_declaration_kept_inline_still_declares_its_name(registry):
-    """One unsupported initialiser must not poison every later mention."""
+    """One unsupported initialiser must not poison every later mention.
+
+    An unknown function stands in for "anything the graph cannot express";
+    a ternary used to be the example here, until it gained a node of its own.
+    """
+    code, report = imported(
+        "float flag = future_function(@P);\n@Cd = set(flag, 0, 0);", registry)
+    # The unknown call stays verbatim; the set() line still becomes nodes.
+    assert report.inlined == 1, report.reasons
+    assert "future_function(@P)" in code
+    assert "set(" in code
+
+
+def test_a_ternary_becomes_a_choose_node(registry):
+    """`a ? b : c` is VOP's Two Way Switch; now it is ours as well."""
     code, report = imported(
         "int flag = @P.y > 0 ? 1 : 0;\n@Cd = set(flag, 0, 0);", registry)
-    # The ternary line stays verbatim; the set() line still becomes nodes.
+    assert report.inlined == 0, report.reasons
+    assert "?" in code and ":" in code
+
+
+def test_a_float_condition_means_nonzero_not_truncation(registry):
+    """`if (@pscale)` is true for 0.7; a trunc shim would make it false."""
+    code, report = imported("if (@pscale) { @Cd.x = 1; }", registry)
+    assert report.inlined == 0, report.reasons
+    assert "trunc" not in code
+    assert "!= 0" in code
+
+
+def test_overloads_are_chosen_by_argument_types(registry):
+    """quaternion() takes an angle-axis pair OR a matrix3, same arity."""
+    code, report = imported(
+        "matrix3 m = matrix3(1);\np@orient = quaternion(m);", registry)
+    assert report.inlined == 0, report.reasons
+
+    code2, report2 = imported("p@orient = quaternion({0, 1, 0});", registry)
+    assert report2.inlined == 0, report2.reasons
+
+
+def test_loops_starting_above_zero_still_map(registry):
+    code, report = imported(
+        "for (int i = 1; i < 5; i++) { @P.y += i; }", registry)
+    assert report.inlined == 0, report.reasons
+    assert "int i = 1" in code
+
+
+def test_one_prefixed_mention_types_the_attribute_everywhere(registry):
+    """`v@dir;` at the top means every later bare `@dir` is a vector."""
+    code, report = imported(
+        "v@dir;\n@dir = @N * 0.5;\n@P += @dir;", registry)
+    # The bare binding statement stays verbatim; everything else is nodes.
     assert report.inlined == 1, report.reasons
-    assert "? 1 : 0" in code
-    assert "set(" in code
+    assert "v@dir" in code
 
 
 def test_a_c_cast_changes_the_graph_not_just_the_label(registry):
