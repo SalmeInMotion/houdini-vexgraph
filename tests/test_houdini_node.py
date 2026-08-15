@@ -72,6 +72,105 @@ def test_a_graph_applied_to_it_cooks_that_geometry(geo):
     assert vh.read_graph(node, registry) is not None
 
 
+def test_the_wrangle_carries_a_button_back_to_the_editor(geo):
+    """The way back must be on the node, not only on the shelf.
+
+    You are already looking at the wrangle; going to find a shelf tool to
+    reopen a window you closed is the wrong shape of errand.
+    """
+    node = vh.create_wrangle({})
+    button = node.parm(vh.OPEN_PARM)
+    assert button is not None, "a new wrangle should carry the button"
+
+    template = button.parmTemplate()
+    assert isinstance(template, hou.ButtonParmTemplate)
+    assert template.label() == "Edit in VEXgraph"
+    assert template.scriptCallbackLanguage() == hou.scriptLanguage.Python
+    # It must open the node it is on, not whatever happens to be selected.
+    assert 'kwargs["node"]' in template.scriptCallback()
+
+    # First in the parameter pane, where it can be found without scrolling.
+    assert node.parmTemplateGroup().entries()[0].name() == vh.OPEN_PARM
+
+
+def test_the_button_is_added_once_and_to_older_nodes_too(geo):
+    """A wrangle made before the button existed gains it on attach."""
+    plain = geo.createNode("attribwrangle")
+    assert plain.parm(vh.OPEN_PARM) is None
+
+    assert vh.add_open_button(plain) is True
+    assert plain.parm(vh.OPEN_PARM) is not None
+    # Asking twice is not an error, and must not stack a second button.
+    assert vh.add_open_button(plain) is False
+    names = [e.name() for e in plain.parmTemplateGroup().entries()]
+    assert names.count(vh.OPEN_PARM) == 1
+
+    assert vh.add_open_button(None) is False
+
+
+def test_the_button_does_not_disturb_the_wrangles_own_parameters(geo):
+    """Adding a spare parm must not cost the node anything it already had.
+
+    Compared by parameter name rather than by the top-level entries: rebuilding
+    the template group renumbers Houdini's own auto-named folders (`folder0`
+    becomes `folder1`), which looks like a difference and is not one - nothing
+    references a folder by name.
+    """
+    reference = geo.createNode("attribwrangle")
+    before = {p.name() for p in reference.parms()}
+
+    node = vh.create_wrangle({})
+    after = {p.name() for p in node.parms()}
+    # Nothing lost is the invariant. Not exact equality: Houdini renumbers its
+    # own auto-named folder parms when the group is rebuilt, so the new node
+    # carries an extra folder bookkeeping name that means nothing to anyone.
+    assert not before - after, f"lost {sorted(before - after)}"
+    assert vh.OPEN_PARM in after
+
+    # The two the tool actually writes to, named explicitly - losing either is
+    # the failure that would matter.
+    assert node.parm("snippet") is not None
+    assert node.parm("class") is not None
+
+
+def test_the_shelf_button_re_reads_the_source_without_a_restart(geo):
+    """Iterating on this tool should not cost a Houdini restart each time.
+
+    Python caches modules, so pressing the button after editing ran the old
+    code. The reloader drops them; the next import reads the files again.
+    """
+    global vh                                              # noqa: PLW0603
+    import vexgraph_reload
+
+    import vexgraph                                        # noqa: PLC0415
+
+    before = id(vh)
+    assert "vexgraph.nodedefs" in sys.modules, "the package should be loaded"
+
+    dropped = vexgraph_reload.purge()
+    assert "vexgraph_houdini" in dropped
+    assert any(n.startswith("vexgraph.") for n in dropped), \
+        "the package must go too, or edits to it are still cached"
+    assert "vexgraph_houdini" not in sys.modules
+    # The reloader itself must survive: it is what does the reloading.
+    assert "vexgraph_reload" in sys.modules
+
+    fresh = vexgraph_reload.fresh()
+    assert id(fresh) != before, "it should be a newly imported module"
+    assert fresh.OPEN_PARM == "vexgraph_open"
+    assert callable(fresh.open_window)
+
+    # Leave the rest of the suite pointing at the module that is now current.
+    vh = fresh
+    assert vexgraph is not None
+
+
+def test_closing_the_window_is_safe_to_call_with_none_open(geo):
+    """purge() calls this before dropping the module; it must never raise."""
+    vh.close_window()
+    vh.close_window()
+
+
 def test_any_node_with_a_snippet_parm_is_a_valid_target(geo):
     assert vh.is_wrangle(geo.createNode("attribwrangle"))
     assert vh.is_wrangle(geo.createNode("volumewrangle"))

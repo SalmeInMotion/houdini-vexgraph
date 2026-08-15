@@ -18,11 +18,17 @@ Houdini claims most keys from a docked pane.
 Select an Attribute Wrangle first to edit its graph, or press the button with
 nothing selected and use New Wrangle inside the panel.]]></helpText>
     <script scriptType="python"><![CDATA[
-import vexgraph_houdini
+import vexgraph_reload
 
+# Through the reloader rather than importing directly: it drops the modules
+# first, so pressing this button picks up edits to VEXgraph's source without
+# restarting Houdini. Deliberately the only thing this script does - the shelf
+# file itself is read at startup, so anything written here needs the restart it
+# is trying to avoid.
+#
 # A window rather than a docked panel: inside a pane, Houdini's hotkey manager
 # sees keys first and the editor's own shortcuts barely work.
-vexgraph_houdini.open_window()
+vexgraph_reload.fresh().open_window()
 ]]></script>
   </tool>
 
@@ -43,9 +49,9 @@ its node graph alongside the VEX it generates.]]></helpText>
     </toolMenuContext>
     <toolSubmenu>VEXgraph</toolSubmenu>
     <script scriptType="python"><![CDATA[
-import vexgraph_houdini
+import vexgraph_reload
 
-vexgraph_houdini.create_wrangle(kwargs)
+vexgraph_reload.fresh().create_wrangle(kwargs)
 ]]></script>
   </tool>
 </shelfDocument>

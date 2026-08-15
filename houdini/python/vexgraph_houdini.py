@@ -41,6 +41,63 @@ RUN_OVER_TO_CLASS = {
 CLASS_TO_RUN_OVER = {v: k for k, v in RUN_OVER_TO_CLASS.items()}
 
 
+# The spare parameter that reopens the editor from the node itself.
+OPEN_PARM = "vexgraph_open"
+
+# Runs in Houdini's Python when the button is pressed. `kwargs["node"]` is the
+# node the button is on, which is what makes one button work on every wrangle
+# rather than reattaching to whatever happens to be selected.
+OPEN_CALLBACK = (
+    'import hou\n'
+    'try:\n'
+    '    import vexgraph_houdini\n'
+    'except ImportError:\n'
+    '    hou.ui.displayMessage(\n'
+    '        "VEXgraph is not on this Houdini\'s Python path.\\n"\n'
+    '        "Check that its package file is installed.")\n'
+    'else:\n'
+    '    vexgraph_houdini.open_window(kwargs["node"])\n'
+)
+
+
+def add_open_button(node) -> bool:
+    """Put an "Edit in VEXgraph" button at the top of the wrangle's parameters.
+
+    The editor was reachable only from the shelf, which is the wrong place to
+    look for it: you are already looking at the node, and if the window was
+    closed - accidentally or otherwise - the way back should be on the thing
+    you are working on rather than somewhere else in the interface.
+
+    A spare parameter rather than a custom node type, for the same reason the
+    node is a plain wrangle: an asset wrapping it would break `ch()`.
+
+    Returns whether it added one; already having the button is not a failure.
+    """
+    if node is None or node.parm(OPEN_PARM) is not None:
+        return False
+
+    template = hou.ButtonParmTemplate(
+        OPEN_PARM, "Edit in VEXgraph",
+        script_callback=OPEN_CALLBACK,
+        script_callback_language=hou.scriptLanguage.Python,
+        help="Open this wrangle's graph in the VEXgraph editor.")
+
+    group = node.parmTemplateGroup()
+    entries = group.entries()
+    # At the top: below the whole Code folder it is off the bottom of a short
+    # parameter pane, which is exactly where you would not find it.
+    if entries:
+        group.insertBefore(entries[0], template)
+    else:
+        group.append(template)
+    try:
+        with hou.undos.group("Add VEXgraph button"):
+            node.setParmTemplateGroup(group)
+    except hou.OperationFailed:
+        return False        # a locked asset, say; the editor still works
+    return True
+
+
 def is_wrangle(node) -> bool:
     """Whether this node can hold a graph and the VEX it generates.
 
@@ -139,6 +196,10 @@ class VexGraphPanel(QtWidgets.QWidget):
     def attach(self, node) -> None:
         self.node_path = node.path()
         self.node_label.setText(node.path())
+        # Attaching is the moment this wrangle becomes a VEXgraph node, so it
+        # is also when it gains the button that reopens the editor. Nodes made
+        # before the button existed pick it up here.
+        add_open_button(node)
         graph = read_graph(node, self.registry)
         if graph is None:
             graph = Graph(self.registry)
@@ -228,6 +289,22 @@ def open_window(node=None):
     return _WINDOW
 
 
+def close_window() -> None:
+    """Close the editor window and forget it.
+
+    Called before a reload: the window's widgets belong to classes that are
+    about to be replaced, and this module's reference to it is about to be
+    dropped along with the module. Leaving it open would mean a second window
+    next time, with the first still running code that no longer exists.
+    """
+    global _WINDOW
+
+    window, _WINDOW = _WINDOW, None
+    if window is not None and _shiboken_alive(window):
+        window.close()
+        window.deleteLater()
+
+
 def _shiboken_alive(widget) -> bool:
     """Whether the C++ side of a Qt object still exists."""
     try:
@@ -250,6 +327,22 @@ class VexGraphWindow(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.panel)
+
+    def closeEvent(self, event) -> None:
+        """Shut the children down explicitly.
+
+        close() on a top-level widget delivers a close event to that widget
+        only - children never see one. The assistant's is not optional: it
+        stops the timers and waits for the probe thread, and a QThread still
+        running when its Python wrapper is collected takes Houdini with it.
+        """
+        editor = getattr(self.panel, "editor", None)
+        if editor is not None:
+            assistant = getattr(editor, "assistant", None)
+            if assistant is not None:
+                assistant.close()
+            editor.close()
+        super().closeEvent(event)
 
 
 def create_wrangle(kwargs=None):
@@ -278,6 +371,7 @@ def create_wrangle(kwargs=None):
 
     node = parent.createNode("attribwrangle", "vexgraph")
     node.parm("class").set(2)                     # points, the usual case
+    add_open_button(node)
     for existing in selected:
         # Compare paths, not objects: hou hands back a fresh Python wrapper on
         # every call, so `is` between two references to the same node is False.
