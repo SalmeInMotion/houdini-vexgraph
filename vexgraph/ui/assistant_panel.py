@@ -27,7 +27,12 @@ from ..assistant.providers import (CLAUDE_MODELS, describe_local_model,
                                    local_model_advice)
 from ..graph import Graph
 from ..nodedefs import Registry
-from . import theme
+from . import richtext, theme
+
+# How long a local model may sit in VRAM with nobody asking it anything. A
+# model left loaded is a couple of gigabytes taken from whatever you render
+# next, and the cost of getting it back is a few seconds on the next question.
+IDLE_UNLOAD_MINUTES = 10
 
 # Short enough to fit the box at every text size. The longer version was clipped
 # mid-sentence, which reads as a bug rather than a hint.
@@ -237,9 +242,14 @@ class AssistantPanel(QtWidgets.QWidget):
         self.mode.setToolTip(
             "Build a graph proposes nodes you can keep or discard.\n"
             "Just answer explains which nodes to use, changing nothing.")
+        # Answering is the safe default: it changes nothing on the canvas, and
+        # asking what a node is for is a far more common question than asking
+        # for a whole graph to be built.
+        self.mode.setCurrentText("Just answer")
 
         self.input = QtWidgets.QPlainTextEdit()
         self.input.setPlaceholderText(PLACEHOLDER)
+        self.input.setToolTip("Ctrl+Enter asks.")
         self.input.setFont(theme.ui_font(9))
         self.input.setMaximumHeight(92)
         # Small enough to survive a cramped pane, big enough to type into.
@@ -291,6 +301,15 @@ class AssistantPanel(QtWidgets.QWidget):
         self._vram_timer.timeout.connect(self._refresh_vram)
         self._vram_timer.start(5000)
         QtCore.QTimer.singleShot(0, self._refresh_vram)
+
+        # A local model that answered a question half an hour ago is still
+        # holding its VRAM, and the machine it is holding it on is the one
+        # rendering. Releasing it costs a few seconds on the next question and
+        # nothing at all if there is no next question.
+        self._last_local_model = ""
+        self._idle_timer = QtCore.QTimer(self)
+        self._idle_timer.setSingleShot(True)
+        self._idle_timer.timeout.connect(self._release_when_idle)
 
         buttons = QtWidgets.QHBoxLayout()
         buttons.setContentsMargins(8, 0, 8, 6)
@@ -393,6 +412,10 @@ class AssistantPanel(QtWidgets.QWidget):
         # Kept so a request can be sent again after supplying a key, without
         # making the user type it a second time.
         self._last_request = text
+        if self.provider.currentText() == "Local":
+            # Remembered so the idle timer knows what to unload, and so a model
+            # swapped away from is still the one released.
+            self._last_local_model = self.model.currentData() or ""
         self.worker = AssistantWorker({
             "provider": self.provider.currentText(),
             "model": self.model.currentData(),
@@ -416,11 +439,18 @@ class AssistantPanel(QtWidgets.QWidget):
         self.send.setEnabled(not running)
         self.stop.setEnabled(running)
         if running:
+            self._idle_timer.stop()
             self._say(f"<i>Asking {self.provider.currentText()}…</i>", "#7a9a7a")
+        elif self._last_local_model:
+            self._idle_timer.start(IDLE_UNLOAD_MINUTES * 60_000)
 
     def _done(self, result: dict) -> None:
         if "answer" in result:
-            self._say(f"<b>Answer</b><br>{html.escape(result['answer'])}",
+            # Rendered rather than escaped: models write headings, lists and
+            # fenced code whatever you tell them, and printing that verbatim
+            # turns a structured answer into one unreadable paragraph with
+            # asterisks in it.
+            self._say(f"<b>Answer</b>{richtext.to_html(result['answer'])}",
                       "#c8d8c8")
             return
 
@@ -432,8 +462,8 @@ class AssistantPanel(QtWidgets.QWidget):
 
         tries = result.get("tries", 1)
         retried = f" after {tries} tries" if tries > 1 else ""
-        self._say(f"<b>{result.get('provider', 'Assistant')}</b><br>"
-                  f"{html.escape(result.get('notes', ''))}<br>"
+        self._say(f"<b>{result.get('provider', 'Assistant')}</b>"
+                  f"{richtext.to_html(result.get('notes', ''))}"
                   f"<i style='color:#7a9a7a'>Compiles{retried}. "
                   f"{len(graph.nodes)} nodes.</i>", "#c8d8c8")
         self._say("<i style='color:#8a8a8a'>Shown on the canvas. Read the graph "
@@ -473,9 +503,18 @@ class AssistantPanel(QtWidgets.QWidget):
         self.discard.setEnabled(False)
 
     def eventFilter(self, watched, event) -> bool:
-        if (watched is self.input
-                and event.type() == QtCore.QEvent.Type.MouseButtonPress):
-            QtCore.QTimer.singleShot(0, self._claim_input_focus)
+        if watched is self.input:
+            if event.type() == QtCore.QEvent.Type.MouseButtonPress:
+                QtCore.QTimer.singleShot(0, self._claim_input_focus)
+            # Ctrl+Enter sends. Enter alone stays a newline: a request is often
+            # two or three sentences, and a box that fires on the first Return
+            # makes writing the second one impossible.
+            elif (event.type() == QtCore.QEvent.Type.KeyPress
+                    and event.key() in (QtCore.Qt.Key.Key_Return,
+                                        QtCore.Qt.Key.Key_Enter)
+                    and event.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier):
+                self.ask()
+                return True
         return super().eventFilter(watched, event)
 
     def _claim_input_focus(self) -> None:
@@ -500,6 +539,7 @@ class AssistantPanel(QtWidgets.QWidget):
         # process down. Stop polling and wait for the one in flight; it is
         # bounded by its own timeouts, so this cannot hang.
         self._vram_timer.stop()
+        self._idle_timer.stop()
         probe, self._vram_probe = self._vram_probe, None
         if probe is not None and probe.isRunning():
             probe.wait(6000)
@@ -515,7 +555,21 @@ class AssistantPanel(QtWidgets.QWidget):
         self.release.setEnabled(has_model)
 
     def _release_model(self) -> None:
+        self._idle_timer.stop()
         self._say(f"<i>{vram.release()}</i>", "#8a8a8a")
+        self._refresh_vram()
+
+    def _release_when_idle(self) -> None:
+        """Give the VRAM back after a spell with nobody asking anything."""
+        if self.worker is not None and self.worker.isRunning():
+            self._idle_timer.start(IDLE_UNLOAD_MINUTES * 60_000)
+            return                       # still working; ask again later
+        if not self._last_local_model:
+            return
+        message = vram.release(self._last_local_model)
+        self._last_local_model = ""
+        self._say(f"<i>Idle for {IDLE_UNLOAD_MINUTES} minutes — {message}</i>",
+                  "#8a8a8a")
         self._refresh_vram()
 
     def _say(self, message: str, colour: str) -> None:

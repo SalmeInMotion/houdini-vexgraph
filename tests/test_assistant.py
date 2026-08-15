@@ -228,10 +228,32 @@ def test_modifying_an_existing_graph_puts_it_in_the_prompt(registry):
 # ----------------------------------------------------------------- providers
 
 def test_local_provider_reports_a_stopped_ollama_without_raising():
-    provider = OllamaProvider(url="http://127.0.0.1:59999")
+    provider = OllamaProvider(url="http://127.0.0.1:59999", autostart=False)
     ready, why = provider.available()
     assert not ready
     assert "not answering" in why
+
+
+def test_a_stopped_ollama_is_started_rather_than_complained_about(monkeypatch):
+    """"Start it and try again" is an errand the tool can run itself."""
+    from vexgraph.assistant import providers as provider_module
+
+    started: list[str] = []
+
+    def fake_start(url, wait=25.0):
+        started.append(url)
+        return False, "Ollama does not appear to be installed"
+
+    monkeypatch.setattr(provider_module, "start_ollama", fake_start)
+    provider = OllamaProvider(url="http://127.0.0.1:59999")
+
+    ready, why = provider.available()
+    assert not ready and "not appear to be installed" in why
+    assert started == ["http://127.0.0.1:59999"]
+
+    # Only once: a machine without Ollama must not pay the wait on every retry.
+    provider.available()
+    assert len(started) == 1
 
 
 def test_claude_provider_never_asks_for_or_stores_a_key(monkeypatch):
@@ -301,6 +323,126 @@ def test_the_chosen_model_reaches_the_provider():
     assert get("Local", "gemma4:12b").model == "gemma4:12b"
     # No model named means the provider keeps its own default.
     assert get("Claude").model
+
+
+def test_a_model_is_never_sent_a_feature_it_does_not_have(monkeypatch):
+    """Haiku 4.5 predates adaptive thinking, and saying so is a 400.
+
+    The failure gave no hint that the model was the problem - just
+    "adaptive thinking is not supported on this model" on every request - so
+    what each model accepts is asserted here rather than discovered in use.
+    """
+    from vexgraph.assistant.providers import MODEL_FEATURES, ClaudeProvider
+
+    sent: dict = {}
+
+    class FakeStream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def get_final_message(self):
+            class Message:
+                stop_reason = "end_turn"
+                content = [type("B", (), {"type": "text", "text": "{}"})()]
+            return Message()
+
+    class FakeAnthropic:
+        class beta:  # noqa: N801
+            class messages:  # noqa: N801
+                @staticmethod
+                def stream(**kwargs):
+                    sent.clear()
+                    sent.update(kwargs)
+                    return FakeStream()
+
+    fake = type("anthropic", (), {
+        "Anthropic": lambda *a, **k: FakeAnthropic(),
+        "APIStatusError": type("APIStatusError", (Exception,), {}),
+        "APIConnectionError": type("APIConnectionError", (Exception,), {}),
+    })
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-a-real-key")
+
+    for model, features in MODEL_FEATURES.items():
+        ClaudeProvider(model=model).complete("sys", [{"role": "user",
+                                                     "content": "hi"}], None)
+        assert ("thinking" in sent) is ("thinking" in features), model
+        assert ("fallbacks" in sent) is ("fallbacks" in features), model
+        effort = "effort" in sent.get("output_config", {})
+        assert effort is ("effort" in features), model
+
+
+def test_models_too_small_to_trust_are_not_offered(monkeypatch):
+    """A 2.6B model invented a VEX function; a 1.5B one answered in JavaScript.
+
+    Neither failure is visible to someone who cannot check the answer, which is
+    who this tool is for - so the menu leaves them out rather than ranking them
+    last.
+    """
+    from vexgraph.assistant import providers as provider_module
+
+    sizes = {"qwen3:32b": "32.8B", "gemma4:12b": "11.9B", "llama3:latest": "8.0B",
+             "gemma2:2b": "2.6B", "qwen2.5:1.5b": "1.5B"}
+    catalogue = {"models": [{"name": name, "size": 5_000_000_000,
+                             "details": {"parameter_size": size}}
+                            for name, size in sizes.items()]}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        @staticmethod
+        def read():
+            return json.dumps(catalogue).encode()
+
+    monkeypatch.setattr(provider_module, "_can_chat", lambda *a: True)
+    monkeypatch.setattr(provider_module.urllib.request, "urlopen",
+                        lambda *a, **k: FakeResponse())
+
+    offered = provider_module.installed_local_models()
+    assert [m["name"] for m in offered] == ["gemma4:12b", "llama3:latest",
+                                            "qwen3:32b"]
+
+    tiers = {m["name"]: provider_module.model_tier(m) for m in offered}
+    assert tiers == {"llama3:latest": "value", "gemma4:12b": "value",
+                     "qwen3:32b": "high-end"}
+    # And the menu says which is which, rather than leaving it to be guessed.
+    assert "good value" in provider_module.describe_local_model(offered[0])
+    assert "high-end" in provider_module.describe_local_model(offered[2])
+
+
+def test_embedding_models_are_kept_out_of_the_local_menu(monkeypatch):
+    """Choosing bge-m3 gave a bare HTTP 400 with nothing to explain it."""
+    from vexgraph.assistant import providers as provider_module
+
+    catalogue = {"models": [{"name": "qwen3:32b", "size": 20_000_000_000,
+                             "details": {"parameter_size": "32.8B"}},
+                            {"name": "bge-m3:latest", "size": 1_200_000_000,
+                             "details": {"family": "bert"}}]}
+    monkeypatch.setattr(provider_module, "_can_chat",
+                        lambda name, url, timeout: "bge" not in name)
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        @staticmethod
+        def read():
+            return json.dumps(catalogue).encode()
+
+    monkeypatch.setattr(provider_module.urllib.request, "urlopen",
+                        lambda *a, **k: FakeResponse())
+    assert [m["name"] for m in provider_module.installed_local_models()] \
+        == ["qwen3:32b"]
 
 
 def test_a_key_is_never_written_into_the_project(tmp_path, monkeypatch):
