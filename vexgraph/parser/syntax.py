@@ -201,6 +201,10 @@ class Parser:
         self.source = source
         self.tokens = tokenize(source)
         self.position = 0
+        # `vector a, b, c;` is one statement in the text and three in the graph.
+        # The extra two wait here and are handed out by the statement loop, so
+        # every caller keeps seeing one statement per call.
+        self._pending: list[Statement] = []
 
     # ------------------------------------------------------------- plumbing
 
@@ -236,7 +240,13 @@ class Parser:
         body: list[Statement] = []
         while self.current.kind is not Kind.END:
             body.append(self.recovering_statement())
+            body.extend(self._drain())
         return body
+
+    def _drain(self) -> list[Statement]:
+        """The extra declarations the last statement produced, if any."""
+        pending, self._pending = self._pending, []
+        return pending
 
     def recovering_statement(self) -> Statement:
         """One unreadable statement must not cost the reader all the others.
@@ -252,6 +262,7 @@ class Parser:
             return self.statement()
         except ParseError as exc:
             self.position = mark
+            self._pending.clear()      # half a declaration list is not useful
             raw = self.raw_from(start)
             raw.reason = str(exc)
             if self.position == mark:      # recovery made no progress
@@ -301,7 +312,7 @@ class Parser:
         """A branch or loop body, braced or a single statement."""
         if self.current.is_(Kind.PUNCT, "{"):
             return self.block().body
-        return [self.statement()]
+        return [self.statement(), *self._drain()]
 
     def declaration(self) -> Statement:
         start = self.current.start
@@ -318,24 +329,37 @@ class Parser:
         if self.current.kind is not Kind.NAME:
             return self.raw_from(start)
 
-        name = self.advance().text
-        if self.current.is_(Kind.PUNCT, "["):
-            self.advance()
-            self.expect(Kind.PUNCT, "]")
-            is_array = True
+        # `vector t, tc, bt;` declares three variables. This used to be handed
+        # back as one Raw statement, which cost far more than the line itself:
+        # the graph then had no record of those names, so every later
+        # assignment to them was refused too and the whole snippet collapsed
+        # into inline VEX. One Declare per name is what the graph already
+        # models, so the split happens here.
+        declared: list[tuple[str, Expr | None, bool]] = []
+        while True:
+            name = self.advance().text
+            name_is_array = is_array
+            if self.current.is_(Kind.PUNCT, "["):
+                self.advance()
+                self.expect(Kind.PUNCT, "]")
+                name_is_array = True
 
-        value = None
-        if self.accept(Kind.OP, "="):
-            value = self.expression()
+            value = None
+            if self.accept(Kind.OP, "="):
+                value = self.expression()
+            declared.append((name, value, name_is_array))
 
-        # A comma means several declarations at once; the graph has one node
-        # per variable, so hand the whole line back rather than guess.
-        if self.current.is_(Kind.PUNCT, ","):
-            return self.raw_from(start)
+            if not self.accept(Kind.PUNCT, ","):
+                break
+            if self.current.kind is not Kind.NAME:
+                return self.raw_from(start)
 
         end = self.expect(Kind.PUNCT, ";").end
-        return Declare(start, end, type=type_name, name=name, value=value,
-                       is_array=is_array)
+        statements = [Declare(start, end, type=type_name, name=name,
+                              value=value, is_array=array)
+                      for name, value, array in declared]
+        self._pending.extend(statements[1:])
+        return statements[0]
 
     def if_statement(self) -> Statement:
         start = self.expect(Kind.KEYWORD, "if").start

@@ -257,6 +257,11 @@ class Importer:
         self._declared_by: dict[str, str] = {}    # name -> the var_make node
         self._read: set[str] = set()
         self._dead: set[str] = set()             # makers an alias made pointless
+        # Names that exist ONLY as a wire to a node's output: `vector push =
+        # v@N * 0.2` becomes a multiply node, and `push` never appears in the
+        # emitted code. Loop indices are deliberately not in here - a loop node
+        # does declare its variable, so materialising one would duplicate it.
+        self._value_aliases: dict[str, tuple[str, str]] = {}
         self._counter = 0
 
     # ------------------------------------------------------------- driving
@@ -290,11 +295,15 @@ class Importer:
             self.report.total += 1
             mark = len(self.graph.nodes)
             try:
-                node_id = self._statement(statement)
+                node_ids = [self._statement(statement)]
             except Unsupported as exc:
                 self._rollback(mark)
-                node_id = self._inline(statement, str(exc))
-            if node_id:
+                # An inlined statement may need declarations put back first,
+                # so this is a run of nodes rather than one.
+                node_ids = self._inline(statement, str(exc))
+            for node_id in node_ids:
+                if not node_id:
+                    continue
                 self.graph.connect(previous, pin, node_id, "exec", is_exec=True)
                 previous, pin = node_id, "exec"
         return previous
@@ -304,13 +313,42 @@ class Importer:
         for node_id in list(self.graph.nodes)[mark:]:
             self.graph.remove(node_id)
 
-    def _inline(self, statement: Statement, reason: str) -> str:
+    def _inline(self, statement: Statement, reason: str) -> list[str]:
         text = self.source[statement.start:statement.end].strip()
         if not text.endswith((";", "}")):
             text += ";"
         self.report.inlined += 1
         self.report.reasons.append(reason)
-        return self.graph.add("inline_vex", self._name("inline"), code=text).id
+        nodes = self._materialise_aliases(text)
+        nodes.append(self.graph.add("inline_vex", self._name("inline"),
+                                    code=text).id)
+        return nodes
+
+    def _materialise_aliases(self, text: str) -> list[str]:
+        """Give back the variables this inline text still expects to exist.
+
+        A translated declaration leaves no variable behind - `vector push =
+        v@N * 0.2` is a multiply node, and nothing in the emitted code is
+        called `push`. Kept code that mentions it would reference a variable
+        that no longer exists, which compiles as source and fails after the
+        round-trip. Declaring it again just before the inline node keeps both
+        halves true: the graph stays wired, and the name is back in the code.
+        """
+        wanted = [name for name in _identifiers(text) if name in self._value_aliases]
+        made: list[str] = []
+        for name in dict.fromkeys(wanted):          # stable, no duplicates
+            node_id, socket = self._value_aliases.pop(name)
+            if node_id not in self.graph.nodes:
+                continue
+            vex_type = self.variables.get(name) or self.graph.socket_type(
+                node_id, socket, is_input=False)
+            maker = self.graph.add("var_make", self._name("make"),
+                                   name=name, type=vex_type)
+            self.graph.connect(node_id, socket, maker.id, "value")
+            self._declared_by[name] = maker.id
+            self._dead.discard(maker.id)
+            made.append(maker.id)
+        return made
 
     def _name(self, stem: str) -> str:
         self._counter += 1
@@ -365,11 +403,13 @@ class Importer:
         # a variable that is written again later needs to be a real variable.
         if value.is_port and not self._reassigned.get(statement.name):
             self._loop_indices[statement.name] = (value.node, value.socket)
+            self._value_aliases[statement.name] = (value.node, value.socket)
             return ""
 
         node = self.graph.add("var_make", self._name("make"),
                               name=statement.name, type=vex_type)
         self._declared_by[statement.name] = node.id
+        self._value_aliases.pop(statement.name, None)
         self._feed(node.id, "value", value)
         return node.id
 
@@ -469,7 +509,8 @@ class Importer:
     def _for(self, statement: For) -> str:
         count = self._counted_loop(statement)
         if count is None:
-            raise Unsupported("only counted loops (for i = 0; i < n; i++) map")
+            raise Unsupported(
+                "only counted loops (for i = 0; i < n; i++) map")
         variable, limit = count
         node = self.graph.add("for_range", self._name("repeat"))
         self._feed(node.id, "count", self._expression(limit))
@@ -480,13 +521,24 @@ class Importer:
 
     @staticmethod
     def _counted_loop(statement: For) -> tuple[str, Expr] | None:
-        """Recognise `for (int i = 0; i < N; i++)` and nothing else."""
+        """Recognise a loop that runs a fixed number of times from zero.
+
+        `i < N` is the textbook form, but `i <= N` is just as common in
+        hand-written VEX and used to fail here - and failing here is expensive,
+        because the whole loop body then falls back to one block of inline VEX.
+        On a real snippet that difference was 5 nodes against 20. `i != N` is
+        the same loop written a third way.
+
+        `<=` runs one more time than `<`, so the count becomes `N + 1` rather
+        than `N`; the extra term is built here instead of being special-cased
+        downstream, so the loop node stays a plain counted loop.
+        """
         setup, condition, step = statement.setup, statement.condition, statement.step
         if not isinstance(setup, Declare) or setup.type != "int":
             return None
         if not (isinstance(setup.value, Literal) and setup.value.text == "0"):
             return None
-        if not (isinstance(condition, Binary) and condition.op == "<"
+        if not (isinstance(condition, Binary) and condition.op in ("<", "<=", "!=")
                 and isinstance(condition.left, Name)
                 and condition.left.name == setup.name):
             return None
@@ -495,7 +547,17 @@ class Importer:
                 and step.target.name == setup.name
                 and isinstance(step.value, Literal) and step.value.text == "1"):
             return None
-        return setup.name, condition.right
+
+        limit = condition.right
+        if condition.op == "<=":
+            if isinstance(limit, Literal) and limit.kind == "int":
+                # `i <= 3` is four iterations; fold it rather than emitting the
+                # arithmetic, so the node reads "4" and not "3 + 1".
+                limit = Literal(text=str(int(limit.text) + 1), kind="int")
+            else:
+                limit = Binary(op="+", left=limit,
+                               right=Literal(text="1", kind="int"))
+        return setup.name, limit
 
     def _foreach(self, statement: ForEach) -> str:
         element = statement.value_type or self._element_type(statement.array)
@@ -719,6 +781,7 @@ class Importer:
         # makes every later use of it untypeable.
         self.variables[name] = self.graph.socket_type(node_id, socket, is_input=False)
         self._loop_indices[name] = (node_id, socket)
+        self._value_aliases[name] = (node_id, socket)
         # The declaration that introduced it is now dead, unless something
         # already read it. It cannot be removed here: it may already be in the
         # exec chain, and deleting it would cut the chain in half.
@@ -782,6 +845,17 @@ class Importer:
                 if socket:
                     return socket.type
         return "float"
+
+
+# Bare identifiers: not an @attribute, not a .member, not a function being
+# called, not a string's contents. Only names already known to be aliases are
+# acted on, so the aim here is to avoid false positives, not to be a lexer.
+_IDENT_RE = re.compile(r"(?<![@.\w])([A-Za-z_]\w*)\s*(?!\s*\()")
+_STRING_RE = re.compile(r'"[^"]*"')
+
+
+def _identifiers(text: str) -> list[str]:
+    return _IDENT_RE.findall(_STRING_RE.sub('""', text))
 
 
 def _loop_variable_names(statements: list[Statement]) -> set[str]:

@@ -172,6 +172,47 @@ def test_hand_written_vex_mostly_becomes_real_nodes(registry):
     assert report.inlined <= 1, report.reasons
 
 
+def test_a_loop_that_counts_to_and_including_n_still_maps(registry):
+    """`i <= n` is as common as `i < n` in hand-written VEX.
+
+    Refusing it was expensive out of all proportion: the whole loop body then
+    became one block of inline VEX. On a real snippet that was the difference
+    between 5 nodes and 20.
+    """
+    for condition, expected in (("i < @numpt", "@numpt"),
+                                ("i <= @numpt", "@numpt + 1"),
+                                ("i != @numpt", "@numpt"),
+                                ("i <= 3", "4")):        # folded, not "3 + 1"
+        code, report = imported(
+            f"for (int i = 0; {condition}; i++) {{\n    @P.y += i;\n}}", registry)
+        assert report.inlined == 0, (condition, report.reasons)
+        assert f"< {expected};" in code, (condition, code)
+
+
+def test_several_variables_declared_on_one_line_become_several_nodes(registry):
+    """One Raw statement here used to cost the whole snippet.
+
+    The graph had no record of the names, so every later assignment to them
+    was refused as undeclared too - one unreadable line turning into a cascade
+    of inline blocks.
+    """
+    _, report = imported("vector t, tc, bt;", registry)
+    assert report.total == 3 and report.inlined == 0, report.reasons
+
+    # And the names are usable afterwards, which is the point.
+    _, report = imported("int closed, curve;\ncurve = 1;", registry)
+    assert report.inlined == 0, report.reasons
+
+
+def test_splitting_declarations_does_not_split_call_arguments(registry):
+    """The commas inside `fit(x, 0, 1, 0, 1)` belong to the call, not the line."""
+    _, report = imported("float d = fit(@P.x, 0, 1, 0, 1);", registry)
+    assert report.total == 1 and report.inlined == 0, report.reasons
+
+    _, report = imported("vector a = {0,0,0}, b = {1,1,1};", registry)
+    assert report.total == 2 and report.inlined == 0, report.reasons
+
+
 # ------------------------------------------------------------ escape hatch
 
 def test_a_while_loop_becomes_one_inline_node(registry):
