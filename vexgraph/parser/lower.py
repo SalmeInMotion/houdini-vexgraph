@@ -731,8 +731,14 @@ class Importer:
         node = self.graph.add("foreach", self._name("each"), type=element)
         # No title trick here, unlike _for: a title is one hint serving this
         # node's TWO outputs (index and item), so naming it after the value
-        # variable collides the two and renames both. The sockets' own titles
-        # already carry sensible names.
+        # variable collides the two and renames both. Instead each output gets
+        # its own name as a per-socket param, which matters beyond cosmetics:
+        # an inline statement in the body still says `i`, and a loop emitted
+        # as `item` leaves that text referring to a variable that never
+        # existed.
+        node.params["item_name"] = statement.value_name
+        if statement.index_name:
+            node.params["index_name"] = statement.index_name
         self._feed(node.id, "items", self._expression(statement.array))
         if statement.index_name:
             self.variables[statement.index_name] = "int"
@@ -987,7 +993,12 @@ class Importer:
         if not candidates:
             return None
         if len(candidates) == 1:
-            return candidates[0]
+            # Even an only child has to fit. Returning it regardless fed
+            # `getbbox_center("uvwrap:uv")` into the int-geometry node, which
+            # emitted int("uvwrap:uv") - code that cannot compile. Inline is
+            # the honest fallback when the one node the registry has is wrong.
+            return None if self._literal_mismatch(candidates[0], expr) \
+                else candidates[0]
 
         best, best_score = None, -1
         for signature in candidates:
@@ -1015,6 +1026,15 @@ class Importer:
                                 and re.fullmatch(r"OpInput[1-4]", argument.name))):
                         fits = False
                         break
+                    # A quoted slot must take a string and an unquoted one must
+                    # not: `getbbox_center(0)` landing in the string-group node
+                    # would emit getbbox_center("0"), which compiles but means
+                    # a different thing - "0" is a group pattern, not input 0.
+                    if isinstance(argument, Literal) and (
+                            (argument.kind == "string")
+                            != (slot.kind == "param_str")):
+                        fits = False
+                        break
                     score += 3    # a literal in a setting is an exact fit too
                 elif slot.kind == "out":
                     if not isinstance(argument, Name):
@@ -1033,9 +1053,53 @@ class Importer:
                     score += 3
             if fits and score > best_score:
                 best, best_score = signature, score
+        if best is not None:
+            return best
         # Nothing fits cleanly: keep the old first-wins behaviour and let the
-        # wiring gates downgrade the statement honestly if they must.
-        return best if best is not None else candidates[0]
+        # wiring gates downgrade the statement honestly if they must - except
+        # where a literal proves the candidate can never work.
+        for signature in candidates:
+            if not self._literal_mismatch(signature, expr):
+                return signature
+        return None
+
+    def _literal_mismatch(self, signature, expr: Call) -> bool:
+        """A literal argument whose type can never serve its slot.
+
+        An expression's type is often a guess that retyping repairs once the
+        socket says what was meant, so a mismatch there is survivable. A
+        literal's type is ground truth: the string "uvwrap:uv" into an int
+        socket becomes int("uvwrap:uv"), and the int 0 into a quoted group
+        slot becomes "0" - one refuses to compile, the other compiles into a
+        different meaning. Neither can be repaired downstream.
+        """
+        definition = self.registry.require(signature.node_type)
+        for slot, argument in zip(signature.slots, expr.args):
+            if not isinstance(argument, Literal):
+                continue
+            if slot.kind in ("param", "param_str"):
+                if (argument.kind == "string") != (slot.kind == "param_str"):
+                    return True
+                continue
+            if slot.kind == "fixed":
+                if argument.text.strip('"') != slot.name:
+                    return True
+                continue
+            if slot.kind != "in":
+                continue
+            socket = definition.input(slot.name)
+            wanted = socket.type if socket else ""
+            got = argument.kind
+            if not wanted or not got:
+                continue
+            if wanted in (vextypes.ANY, vextypes.ANY_ARRAY):
+                continue
+            if got == wanted or vextypes.can_connect(got, wanted):
+                continue
+            if got == "float" and wanted == "int":
+                continue
+            return True
+        return False
 
     def _place_call(self, signature, expr: Call, *,
                     chained_by_caller: bool = False) -> Value:
@@ -1081,13 +1145,17 @@ class Importer:
                     self._feed(node.id, socket.reads, self._expression(argument))
                 name = argument.name
                 if (name in self._declared_by
-                        and self._declared_depth.get(name, 0) < self._depth):
+                        and (self._declared_depth.get(name, 0) < self._depth
+                             or self._reassigned.get(name))):
                     # VOP's rule for state crossing a scope: the variable
                     # lives outside, this call only assigns it. An alias here
                     # would claim a wire from inside the branch as the
                     # variable's value everywhere - which is exactly the
                     # "comes from inside the If, used outside it" refusal the
-                    # emitter then makes, on a graph already built.
+                    # emitter then makes, on a graph already built. The same
+                    # goes for a variable written again later (`points[i] =`):
+                    # aliasing it away leaves that write with no variable, so
+                    # the declaration must stay the one true binding.
                     setters.append((name, slot.name))
                 else:
                     self._alias(name, node.id, slot.name)
@@ -1347,6 +1415,10 @@ def _reassigned_names(statements: list[Statement]) -> dict[str, bool]:
                 # and the component write then set a variable that was never
                 # declared.
                 elif (isinstance(item.target, Member)
+                        and isinstance(item.target.target, Name)):
+                    found[item.target.target.name] = True
+                # And `points[i] = x` writes points the same way.
+                elif (isinstance(item.target, Index)
                         and isinstance(item.target.target, Name)):
                     found[item.target.target.name] = True
             for attribute in ("body", "then", "otherwise"):

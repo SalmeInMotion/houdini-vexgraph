@@ -524,3 +524,37 @@ def test_an_array_attribute_is_read(registry):
 
     plain = tokenize("v@up")[0]
     assert plain.prefix == "v" and not plain.is_array
+
+
+def test_prefix_increment_is_a_counted_loop_too(registry):
+    """`++x` failed worse than unsupported: the for header stopped parsing as
+    a loop and its pieces became separate statements - and separate lines."""
+    code, report = imported("for (int x = 0; x < 5; ++x) { @Cd = {1, 0, 0}; }",
+                            registry)
+    assert report.inlined == 0
+    assert "for (int x = 0; x < 5; x++)" in code
+
+
+def test_foreach_keeps_the_authors_item_name(registry):
+    """The body may carry inline text that still says `i`; a loop emitted as
+    `item` leaves that text referring to a variable that never existed."""
+    code, _ = imported("foreach (int i; {1, 2, 3}) { @P.x += i; }", registry)
+    assert ", i; " in code
+
+
+def test_sibling_scopes_may_declare_the_same_name(registry):
+    """Two branches each making their own `to` is ordinary VEX; the emitter
+    used to drop the second declaration as a duplicate."""
+    code, _ = imported(
+        "if (@ptnum == 0) { int to = 1; @P.x = to; }\n"
+        "if (@ptnum == 1) { int to = 2; @P.y = to; }", registry)
+    assert code.count("int to") == 2
+
+
+def test_a_string_literal_never_lands_in_an_int_slot(registry):
+    """The registry's only getbbox_center node took an int; feeding it the
+    string form emitted int("uvwrap:uv"), which cannot compile."""
+    code, _ = imported('v@center = getbbox_center("uvwrap:uv opinput:0");',
+                       registry)
+    assert 'getbbox_center("uvwrap:uv opinput:0")' in code
+    assert 'int("' not in code

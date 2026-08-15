@@ -207,6 +207,7 @@ class Emitter:
         self.var_of: dict[tuple[str, str], str] = {}   # (node, socket) -> name
         self.emitted: set[str] = set()
         self.variables: dict[str, tuple[str, str, Scope]] = {}  # user vars
+        self.inline_renames: dict[str, str] = {}  # loop vars we had to rename
         self.names = NameAllocator(self._reserved_function_names())
 
     # ---------------------------------------------------------------- public
@@ -508,10 +509,23 @@ class Emitter:
             definition = self.graph.definition(node)
             socket = definition.output(socket_name)
             # Prefer what the user renamed the node to; it is the most likely
-            # to describe what the value actually means in this graph.
-            hint = node.title or (socket.title if socket and len(definition.outputs) > 1
-                                  else definition.label)
-            self.var_of[key] = self.names.alloc(hint)
+            # to describe what the value actually means in this graph. A
+            # `<socket>_name` param wins over even that: it is a per-socket
+            # name (a foreach carries one for each of its two outputs, where
+            # a single title cannot serve both).
+            source_name = (node.params.get(f"{socket_name}_name")
+                           or node.title)
+            hint = source_name or (
+                socket.title if socket and len(definition.outputs) > 1
+                else definition.label)
+            allocated = self.names.alloc(hint)
+            self.var_of[key] = allocated
+            # A loop variable that had to be renamed (two sibling loops both
+            # called `i`) leaves inline text in its body referring to the old
+            # name; record the rename so _follow_renames repairs that text.
+            if (definition.kind == "scope" and source_name
+                    and allocated != source_name):
+                self.inline_renames[source_name] = allocated
         return self.var_of[key]
 
     @staticmethod
@@ -616,6 +630,7 @@ class Emitter:
             return text
         renamed = {label: entry[0] for label, entry in self.variables.items()
                    if entry[0] != label}
+        renamed.update(self.inline_renames)
         if not renamed:
             return text
 
@@ -700,14 +715,20 @@ class Emitter:
     def _builtin_var_declare(self, node: Node, definition: NodeDef) -> list[Line]:
         label = self.graph.param_value(node, "name")
         vex_type = self.graph.param_value(node, "type")
-        if label in self.variables:
+        scope = self.scope_of.get(node.id, self.root)
+        existing = self.variables.get(label)
+        # Only a duplicate the first declaration can *see* is an error. Two
+        # sibling branches each making their own `to` is ordinary VEX; they
+        # are different variables sharing a label, so the later one simply
+        # gets its own (suffixed) name, and everything downstream follows it
+        # through self.variables the same way any rename does.
+        if existing is not None and existing[2].contains(scope):
             self.issues.append(Issue(
                 f"There is already a variable called {label!r}. Use Set "
                 f"Variable to change it, or give this one another name.",
                 node.id))
             return []
         name = self.names.alloc(label)
-        scope = self.scope_of.get(node.id, self.root)
         self.variables[label] = (name, vex_type, scope)
         value = self._input_expression(node, "value")
         return [Line(f"{vextypes.declaration(vex_type, name)} = {value};",

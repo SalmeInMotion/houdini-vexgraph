@@ -434,6 +434,18 @@ class Parser:
     def bare_expression_statement(self) -> Statement:
         """An expression statement without its semicolon — also a `for` step."""
         start = self.current.start
+
+        # `++x` is `x += 1` just as `x++` is. Refusing the prefix spelling
+        # did not fail cleanly: the surrounding `for` header stopped parsing
+        # as a loop and its pieces became separate statements, which emitted
+        # as separate lines - a syntax error after the round trip.
+        if self.current.kind is Kind.OP and self.current.text in ("++", "--"):
+            op = self.advance().text
+            target = self.expression()
+            return Assign(start, self.tokens[self.position - 1].end,
+                          target=target, op="+=" if op == "++" else "-=",
+                          value=Literal("1", "int"))
+
         target = self.expression()
 
         if self.current.kind is Kind.OP and self.current.text in ASSIGN_OPS:
