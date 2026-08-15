@@ -81,9 +81,22 @@ Rules:
 - Plain statements only: no function definitions, no structs. Keep it simple
   and idiomatic - attributes via @ bindings (v@P, f@pscale, i@id, @Cd),
   standard VEX functions.
+- Only use VEX functions that genuinely exist. If you are unsure a function
+  exists, build the same result from ones you are certain of. An invented
+  function name is the single worst failure here.
+- Write only what was asked. No defensive checks, no extra attributes, no
+  commented-out alternatives.
 - Channel parameters (chf/chv/chi) are welcome where a value should be
   tweakable.
-- Return ONLY the code. No prose before or after, no markdown fence."""
+- Return ONLY the code. No prose before or after, no markdown fence.
+
+VEX syntax that is commonly got wrong:
+- Arrays are declared C-style, with the brackets after the name:
+      int pts[] = nearpoints(0, @P, 0, 5);     correct
+      int[] pts = nearpoints(0, @P, 0, 5);     WRONG, will not compile
+- Array length is len(), not length(). length() is the magnitude of a vector.
+- Strings use double quotes only.
+- There is no ternary chaining or `else if` shorthand beyond standard C."""
 
 VEX_REPAIR = """That VEX was rejected by the compiler. Fix it and return the \
 whole snippet again (same format: run-over comment first, code only).
