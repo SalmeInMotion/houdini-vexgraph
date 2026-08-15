@@ -652,6 +652,7 @@ class GraphView(QtWidgets.QGraphicsView):
     node_search_requested = QtCore.Signal(QtCore.QPointF, object)
     help_requested = QtCore.Signal(str)          # node type
     function_opened = QtCore.Signal(str)         # user-function name
+    collapse_requested = QtCore.Signal()         # selection -> function
 
     def __init__(self, scene: GraphScene, parent=None):
         super().__init__(scene, parent)
@@ -805,6 +806,11 @@ class GraphView(QtWidgets.QGraphicsView):
             f"Delete {len(selected)} nodes" if len(selected) > 1 else "Delete node")
         delete.setEnabled(bool(selected))
         delete.setData("delete")
+        collapse = menu.addAction("Collapse into a function...")
+        collapse.setToolTip("Turn the selected nodes into a reusable "
+                            "function; what fed them becomes its inputs.")
+        collapse.setEnabled(bool(selected))
+        collapse.setData("collapse")
         menu.addSeparator()
         menu.addAction("Add node...").setData("add")
         return menu
@@ -820,6 +826,8 @@ class GraphView(QtWidgets.QGraphicsView):
             return
         if chosen.data() == "delete":
             self.scene().delete_selected()
+        elif chosen.data() == "collapse":
+            self.collapse_requested.emit()
         elif chosen.data() == "add":
             self.request_node_search(
                 self.mapToScene(self.mapFromGlobal(screen_pos)))

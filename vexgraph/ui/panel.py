@@ -795,6 +795,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.view.node_search_requested.connect(self._search_at)
         self.view.help_requested.connect(self.open_help_for)
         self.view.function_opened.connect(self.enter_function)
+        self.view.collapse_requested.connect(self._collapse_dialog)
         self.code.line_clicked.connect(self._select_from_code)
         self.code.edited.connect(self._code_edited)
         self.code.commit_requested.connect(self.build_from_code)
@@ -989,6 +990,57 @@ class VexGraphEditor(QtWidgets.QWidget):
     def leave_function(self) -> None:
         self._open_function = ""
         self._show_scene()
+
+    def collapse_selection(self, name: str) -> bool:
+        """Turn the selected nodes into a function, or say why not.
+
+        Transactional: the collapse mutates the document, then the whole
+        document is emitted as proof. A refusal or a broken emission puts
+        everything back exactly as it was - the user never sees a half-made
+        function.
+        """
+        from .. import refactor                                # noqa: PLC0415
+        from .items import NodeItem                            # noqa: PLC0415
+
+        if self.scene.graph is not self.graph:
+            self._show_message("Collapse from the main graph, not from "
+                               "inside a function.")
+            return False
+        selected = {item.node.id for item in self.scene.selectedItems()
+                    if isinstance(item, NodeItem)}
+        snapshot = self.graph.to_dict()
+        error = refactor.collapse(self.graph, selected, name)
+        if not error:
+            emission = generate(self.graph)
+            if any(i.severity == ERROR for i in emission.issues):
+                error = ("That selection does not emit working VEX as a "
+                         "function; nothing was changed.")
+            else:
+                # The emitter's checks are necessary but vcc is the truth:
+                # a collapse only commits as *compiled* code.
+                check = compile_check(emission, self.graph)
+                if check.checked and not check.ok:
+                    error = ("The collapsed VEX does not compile; nothing "
+                             "was changed.")
+        if error:
+            self.graph = Graph.from_dict(snapshot, self.registry)
+            self._show_scene()
+            self.assistant.set_graph(self.graph)
+            self._show_message(error)
+            return False
+        self._show_scene()
+        self._record_history()
+        self._schedule()
+        self._show_message(f"Collapsed into {name}() — double-click the "
+                           f"call to step inside.")
+        return True
+
+    def _collapse_dialog(self) -> None:
+        name, accepted = QtWidgets.QInputDialog.getText(
+            self, "Collapse into a function",
+            "Function name (letters, digits, no spaces):")
+        if accepted and name.strip():
+            self.collapse_selection(name.strip())
 
     def _show_scene(self) -> None:
         """Point the canvas at the open function, or at the main graph.

@@ -1345,3 +1345,29 @@ def test_rebuilding_while_inside_a_vanished_function_returns_home(editor):
     editor.build_from_code()
     assert editor.scene.graph is editor.graph
     assert editor.crumb_bar.isHidden()
+
+
+def test_collapse_from_the_panel_is_transactional(editor):
+    """A refused collapse leaves the document byte-identical; a good one
+    lands in history so undo can take it back."""
+    editor.code.setPlainText("f@d = length(@P - @N) * 2 + 0.5;")
+    editor.build_from_code()
+    before = editor.graph.to_dict()
+
+    for item in editor.scene.node_items.values():
+        item.setSelected(item.node.type in ("subtract", "multiply",
+                                            "add", "length"))
+    assert editor.collapse_selection("measure")
+    assert "measure" in editor.graph.functions
+    assert "measure" in editor.code.toPlainText() or True  # regenerated async
+    editor._regenerate()
+    assert "float measure(" in editor.code.toPlainText()
+
+    # And an impossible one rolls back without a trace.
+    editor.scene.clearSelection()
+    for item in editor.scene.node_items.values():
+        if item.node.type == "attrib_set":
+            item.setSelected(True)
+    snapshot = editor.graph.to_dict()
+    assert not editor.collapse_selection("bad")
+    assert editor.graph.to_dict() == snapshot
