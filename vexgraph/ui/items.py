@@ -122,6 +122,21 @@ class PortItem(QtWidgets.QGraphicsItem):
                 return
         super().mousePressEvent(event)
 
+    def mouseDoubleClickEvent(self,
+                              event: QtWidgets.QGraphicsSceneMouseEvent) -> None:
+        """Double-clicking a vector output shows or hides its component pins."""
+        if (not self.is_input and not self.is_exec and "." not in self.name
+                and vextypes.components_of(self.vex_type)):
+            expanded = self.node_item.expanded_outputs
+            expanded.symmetric_difference_update({self.name})
+            self.node_item.rebuild()
+            scene = self.scene()
+            if hasattr(scene, "rebuild_links"):
+                scene.rebuild_links()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
 
 # ---------------------------------------------------------------- value rows
 
@@ -397,6 +412,9 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self.definition: NodeDef = graph.definition(node)
         self.ports: dict[tuple[str, bool], PortItem] = {}
         self.rows: list[RowItem] = []
+        # Vector outputs whose component pins are all shown (double-click a
+        # vector output to toggle). Pins a wire uses are shown regardless.
+        self.expanded_outputs: set[str] = set()
         self._width = theme.NODE_MIN_WIDTH
         self._height = theme.TITLE_HEIGHT
         self.status = ""          # "", "error" or "warning"
@@ -438,6 +456,20 @@ class NodeItem(QtWidgets.QGraphicsItem):
                          + _text_width(value, label_font) + 62)
 
         return max(theme.NODE_MIN_WIDTH, min(theme.NODE_MAX_WIDTH, widest))
+
+    def _shown_components(self, socket_name: str) -> list[str]:
+        """Which component pins this output shows, in component order."""
+        base_type = self._socket_type(socket_name, False)
+        components = vextypes.components_of(base_type)
+        if not components:
+            return []
+        prefix = f"{socket_name}."
+        used = {link.from_socket[len(prefix):] for link in self.graph.links
+                if link.from_node == self.node.id
+                and link.from_socket.startswith(prefix)}
+        if socket_name in self.expanded_outputs:
+            return list(components)
+        return [c for c in components if c in used]
 
     def _port_columns(self) -> tuple[list[SocketDef], list[SocketDef]]:
         """Inputs that get a row of their own are not listed again as ports.
@@ -495,16 +527,24 @@ class NodeItem(QtWidgets.QGraphicsItem):
             y += theme.PORT_ROW_HEIGHT
 
         inputs, outputs = self._port_columns()
-        for index in range(max(len(inputs), len(outputs))):
+        # A vector output's components are pins of their own, listed right
+        # under it: the ones a wire already uses, plus all of them when the
+        # output is expanded (double-click the port).
+        out_rows: list[tuple[str, str, str]] = []
+        for socket in outputs:
+            out_rows.append((socket.name, socket.title,
+                             self._socket_type(socket.name, False)))
+            for comp in self._shown_components(socket.name):
+                out_rows.append((f"{socket.name}.{comp}", f".{comp}", "float"))
+        for index in range(max(len(inputs), len(out_rows))):
             if index < len(inputs):
                 socket = inputs[index]
                 self._add_port(socket.name, socket.title,
                                self._socket_type(socket.name, True),
                                is_input=True, is_exec=False, y=y)
-            if index < len(outputs):
-                socket = outputs[index]
-                self._add_port(socket.name, socket.title,
-                               self._socket_type(socket.name, False),
+            if index < len(out_rows):
+                name, title, vex_type = out_rows[index]
+                self._add_port(name, title, vex_type,
                                is_input=False, is_exec=False, y=y)
             y += theme.PORT_ROW_HEIGHT
 

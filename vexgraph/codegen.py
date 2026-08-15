@@ -271,7 +271,9 @@ class Emitter:
         definition = self.graph.definition(node_id)
         if definition.kind == "pure":
             return self.placement[node_id]
-        socket_def = definition.output(socket)
+        # A component pin lives wherever its base output lives: a foreach's
+        # `item.y` exists only inside the body, exactly like `item`.
+        socket_def = definition.output(socket.partition(".")[0])
         if socket_def is not None and socket_def.scope:
             return self.bodies[(node_id, socket_def.scope)]
         return self.scope_of.get(node_id, self.root)
@@ -582,15 +584,24 @@ class Emitter:
         source_def = self.graph.definition(source_node)
         got = self.graph.socket_type(source_node, link.from_socket, is_input=False)
 
+        # A component pin reads one part of the source: `@P.y`, `(a + b).x`.
+        # The source composes at ATOM precedence because `.` binds tighter
+        # than anything the expression may contain.
+        base_socket, _, component = link.from_socket.partition(".")
+
         if source_def.kind == "pure" and self._is_inlined(link.from_node):
             expr = self._render(source_def.expr, source_node).strip()
             binding = loosest_precedence(expr)
-            if binding < context or (binding == context and right_of_nonassoc
-                                     and context > 0):
+            wanted_context = ATOM if component else context
+            if binding < wanted_context or (
+                    binding == wanted_context and right_of_nonassoc
+                    and wanted_context > 0):
                 expr = f"({expr})"
         else:
-            expr = self._name_for(source_node, link.from_socket)
+            expr = self._name_for(source_node, base_socket)
 
+        if component:
+            expr = f"{expr}.{component}"
         return vextypes.cast_expression(expr, got, want)
 
     def _substitution(self, node: Node, name: str, context: int = 0,

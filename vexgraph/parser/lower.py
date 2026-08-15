@@ -616,16 +616,20 @@ class Importer:
                 return node.id
 
         current = self._expression(target.target)
-        split = self.graph.add("split_vector", self._name("split"))
-        self._feed(split.id, "vector", current)
-
         make = self.graph.add("make_vector", self._name("rebuilt"))
         for axis in ("x", "y", "z"):
             if axis == target.name:
                 self._feed(make.id, axis, self._expression(value))
+            elif current.is_port:
+                # The kept components come straight off the source's pins.
+                self._feed(make.id, axis,
+                           Value(node=current.node,
+                                 socket=f"{current.socket}.{axis}",
+                                 type="float"))
             else:
                 self._feed(make.id, axis,
-                           Value(node=split.id, socket=axis, type="float"))
+                           Value(literal=f"{current.literal}.{axis}",
+                                 type="float"))
 
         rebuilt = Value(node=make.id, socket="result", type="vector")
         if isinstance(target.target, Attribute):
@@ -946,11 +950,22 @@ class Importer:
             return self._place_call(signature, expr)
 
         if isinstance(expr, Member):
-            if expr.name not in ("x", "y", "z"):
+            value = self._expression(expr.target)
+            components = vextypes.components_of(value.type)
+            if not components:
+                # The guess may be wrong the way any polymorphic read can be;
+                # `.z` is the evidence it was a vector all along.
+                if value.is_port and self._retype_to(value, "vector"):
+                    components = vextypes.components_of(value.type)
+            if expr.name not in components or "." in value.socket:
                 raise Unsupported(f".{expr.name} is not modelled")
-            node = self.graph.add("split_vector", self._name("split"))
-            self._feed(node.id, "vector", self._expression(expr.target))
-            return Value(node=node.id, socket=expr.name, type="float")
+            if not value.is_port:
+                node = self.graph.add("split_vector", self._name("split"))
+                self._feed(node.id, "vector", value)
+                return Value(node=node.id, socket=expr.name, type="float")
+            # No node at all: the source output offers its parts as pins.
+            return Value(node=value.node,
+                         socket=f"{value.socket}.{expr.name}", type="float")
 
         if isinstance(expr, Index):
             element = self._element_type(expr.target)

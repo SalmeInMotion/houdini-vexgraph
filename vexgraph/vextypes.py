@@ -124,6 +124,20 @@ def zero(vex_type: str) -> str:
     return ZERO.get(vex_type, "0")
 
 
+# The named parts of each vector type. Every component is a float, and a
+# vector output socket offers them as pins of its own, so reading `.y` does
+# not need a Split Vector node standing in the way.
+COMPONENTS = {
+    "vector2": ("x", "y"),
+    "vector": ("x", "y", "z"),
+    "vector4": ("x", "y", "z", "w"),
+}
+
+
+def components_of(vex_type: str) -> tuple[str, ...]:
+    return COMPONENTS.get(vex_type, ())
+
+
 def is_array(vex_type: str) -> bool:
     return vex_type.endswith("[]")
 

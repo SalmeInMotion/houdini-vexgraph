@@ -585,3 +585,21 @@ def test_plain_fit01_is_not_hijacked_by_random_range(registry):
     code, report = imported("f@x = fit01(@P.x, 2, 5);", registry)
     assert "random_range" not in {n.type for n in report.graph.nodes.values()}
     assert "rand(" not in code
+
+
+def test_component_reads_are_pins_not_nodes(registry):
+    """Reading `.y` hangs a wire off the source's component pin; the Split
+    Vector box - 204 of them across the corpus - stands for nothing."""
+    code, report = imported("f@a = @P.y * 2;", registry)
+    assert "f@a = @P.y * 2;" in code
+    assert "split_vector" not in {n.type for n in report.graph.nodes.values()}
+    link = next(l for l in report.graph.links
+                if l.to_socket == "a" and not l.is_exec)
+    assert link.from_socket == "value.y"
+
+
+def test_vector4_offers_its_w_component(registry):
+    """The old split node only knew xyz; pins follow the source's real type."""
+    code, report = imported("vector4 q = p@orient; f@a = q.w;", registry)
+    assert "@orient.w" in code
+    assert "split_vector" not in {n.type for n in report.graph.nodes.values()}

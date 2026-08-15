@@ -1268,3 +1268,33 @@ def test_released_nodes_settle_onto_the_grid(editor):
     assert item.pos().x() % step == 0 and item.pos().y() % step == 0
     # And the graph document followed the item, so the snap survives a save.
     assert item.node.pos == (item.pos().x(), item.pos().y())
+
+
+def test_component_pins_appear_where_wires_use_them(app, registry):
+    """A loaded graph with a wire off `value.y` must draw that pin."""
+    graph = Graph(registry)
+    scene = GraphScene(graph)
+    source = scene.add_node("attrib_get", QtCore.QPointF(0, 0))
+    source.node.params["type"] = "vector"
+    target = scene.add_node("attrib_set", QtCore.QPointF(300, 0))
+    graph.connect(source.node.id, "value.y", target.node.id, "value")
+    source.rebuild()
+    scene.rebuild_links()
+
+    pin = source.ports.get(("value.y", False))
+    assert pin is not None
+    assert pin.vex_type == "float"
+    assert len(scene.link_items) == 1
+
+
+def test_expanding_an_output_shows_every_component(app, registry):
+    graph = Graph(registry)
+    scene = GraphScene(graph)
+    item = scene.add_node("attrib_get", QtCore.QPointF(0, 0))
+    item.node.params["type"] = "vector"
+    item.rebuild()
+    assert ("value.x", False) not in item.ports
+
+    item.expanded_outputs.add("value")
+    item.rebuild()
+    assert all(("value." + c, False) in item.ports for c in "xyz")

@@ -159,6 +159,15 @@ class Graph:
         """
         node = self.nodes[node] if isinstance(node, str) else node
         d = self.definition(node)
+        # "value.y" is the y component pin of the "value" output: every
+        # vector-typed output offers its parts as float pins of their own.
+        if not is_input and "." in socket:
+            base, component = socket.split(".", 1)
+            base_type = self.socket_type(node, base, is_input=False)
+            if component in vextypes.components_of(base_type):
+                return "float"
+            raise KeyError(f"{node.type}: a {base_type} output has no "
+                           f"{component!r} component")
         socket_def = d.input(socket) if is_input else d.output(socket)
         if socket_def is None:
             raise KeyError(f"{node.type} has no {'input' if is_input else 'output'}"
