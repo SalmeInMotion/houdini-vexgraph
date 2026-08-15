@@ -40,7 +40,15 @@ def run(request: dict) -> dict:
     if request.get("mode") == "explain":
         return {"ok": True, "answer": assistant.explain(request["text"], current)}
 
-    result = assistant.build_graph(request["text"], current)
+    # Local models build best by writing VEX (their training data) rather than
+    # by choosing from the invented node catalogue under a giant schema; the
+    # parser lowers their code onto the canvas. Claude keeps the catalogue
+    # route, which it is good at. `route` overrides either way.
+    route = request.get("route") or ("vex" if provider.name == "Local" else "catalog")
+    if route == "vex":
+        result = assistant.build_graph_via_vex(request["text"], current)
+    else:
+        result = assistant.build_graph(request["text"], current)
     return {
         "ok": result.ok,
         "graph": result.graph.to_dict() if result.graph else None,
@@ -49,6 +57,7 @@ def run(request: dict) -> dict:
         "problems": result.problems,
         "tries": result.tries,
         "provider": result.provider,
+        "route": route,
     }
 
 

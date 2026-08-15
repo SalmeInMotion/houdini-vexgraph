@@ -40,6 +40,11 @@ VEX_KEYWORDS = {
 
 IDENT_RE = re.compile(r"[^0-9a-zA-Z_]+")
 
+# Bare identifiers inside hand-written VEX: not an @attribute, not a .member,
+# not a function being called. Used only to follow variable renames, so it errs
+# towards leaving text alone.
+INLINE_IDENT_RE = re.compile(r"(?<![@.\w])([A-Za-z_]\w*)\b(?!\s*\()")
+
 # Operator precedence, loosest first. Used to decide whether an expression being
 # inlined needs brackets around it. Wrapping everything would be correct and
 # unreadable, and unreadable defeats the purpose: the generated VEX is meant to
@@ -588,6 +593,28 @@ class Emitter:
 
         return PLACEHOLDER_RE.sub(replace, template)
 
+    def _follow_renames(self, text: str, definition: NodeDef) -> str:
+        """Point hand-written VEX at the names the declarations actually got.
+
+        A variable's label is not always the name it is emitted under: `push`
+        is a VEX function, so Make Variable "push" is declared as `push_value`
+        rather than shadowing it. Code the graph wrote knows that; code a
+        person (or an importer) wrote by hand does not, and would reference a
+        variable that does not exist. Rewriting the identifier keeps the
+        escape hatch honest - inside this scope, that name means that variable.
+        """
+        if definition.type != "inline_vex":
+            return text
+        renamed = {label: entry[0] for label, entry in self.variables.items()
+                   if entry[0] != label}
+        if not renamed:
+            return text
+
+        def swap(match: re.Match) -> str:
+            return renamed.get(match.group(1), match.group(1))
+
+        return INLINE_IDENT_RE.sub(swap, text)
+
     def _render_block(self, template: str, node: Node) -> list[Line]:
         """Render a statement template, splicing bodies in at their indent."""
         definition = self.graph.definition(node)
@@ -597,6 +624,7 @@ class Emitter:
             body = self._body_placeholder(raw_line, definition)
             if body is None:
                 rendered = self._render(raw_line, node)
+                rendered = self._follow_renames(rendered, definition)
                 # A substituted value can itself be multi-line — hand-written
                 # VEX in an Inline node is the usual case. Splitting keeps one
                 # Line per real line, so the line map still points at the node.

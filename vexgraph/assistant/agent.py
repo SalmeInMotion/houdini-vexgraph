@@ -22,7 +22,8 @@ from .. import vextypes
 from ..codegen import generate
 from ..graph import ERROR, Graph, Node
 from ..nodedefs import Registry
-from ..vccmap import compile_check
+from ..parser import import_vex
+from ..vccmap import check_source, compile_check
 from . import catalog
 
 MAX_ATTEMPTS = 3
@@ -59,6 +60,53 @@ Problems:
 {problems}
 
 Return only the corrected JSON object."""
+
+# ------------------------------------------------------- the write-VEX route
+#
+# The catalogue route above asks the model to choose from ~1300 invented node
+# types under a JSON schema — squarely outside a local model's training
+# distribution, and schema-constrained decoding on a grammar that size is what
+# made a 32B model sit for 25 minutes. This route asks for the one thing every
+# model has seen thousands of times: plain VEX. The parser then lowers it onto
+# the canvas (per-statement, never fatal — what does not map becomes an Inline
+# VEX node), and vcc remains the final judge either way. The model writes; the
+# importer draws; the compiler decides.
+
+VEX_SYSTEM = """You write VEX for a Houdini Attribute Wrangle node.
+
+Rules:
+- First line: a comment stating what to run over, e.g. `// run over: points`
+  (one of: points, primitives, vertices, detail, numbers).
+- Then the VEX statements, exactly as they would be typed into the wrangle.
+- Plain statements only: no function definitions, no structs. Keep it simple
+  and idiomatic - attributes via @ bindings (v@P, f@pscale, i@id, @Cd),
+  standard VEX functions.
+- Channel parameters (chf/chv/chi) are welcome where a value should be
+  tweakable.
+- Return ONLY the code. No prose before or after, no markdown fence."""
+
+VEX_REPAIR = """That VEX was rejected by the compiler. Fix it and return the \
+whole snippet again (same format: run-over comment first, code only).
+
+Compiler errors:
+{problems}"""
+
+RUN_OVER_RE = re.compile(
+    r"//\s*run\s*over\s*:?\s*(points|primitives|vertices|detail|numbers)",
+    re.IGNORECASE)
+
+
+def strip_vex(text: str) -> tuple[str, str]:
+    """(code, run_over) from a model reply that may carry fences or prose."""
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    fenced = re.search(r"```[a-zA-Z]*\s*\n(.*?)\n?```", text, re.DOTALL)
+    if fenced:
+        text = fenced.group(1).strip()
+    match = RUN_OVER_RE.search(text)
+    run_over = match.group(1).lower() if match else "points"
+    if match:
+        text = (text[:match.start()] + text[match.end():]).strip()
+    return text, run_over
 
 # The shape the model must return. Positions are deliberately absent: the editor
 # lays the graph out itself, and asking a model for coordinates wastes tokens on
@@ -324,6 +372,84 @@ class Assistant:
 
         return Result(False, None, "", "", attempts[-1].problems if attempts
                       else ["No reply."], attempts, self.provider.name)
+
+    def build_graph_via_vex(self, request: str, current: Graph | None = None, *,
+                            max_attempts: int = MAX_ATTEMPTS) -> Result:
+        """Ask for VEX, compile it, and lower it onto the canvas.
+
+        The default route for local models (see the module comment above
+        VEX_SYSTEM), and available to any provider. The repair loop feeds the
+        model the compiler's own line-numbered errors against its own code -
+        the one kind of correction every model has been trained on.
+        """
+        parts = []
+        if current is not None and len(current.nodes) > 1:
+            emission = generate(current)
+            if emission.code.strip():
+                parts.append("# The code as it stands\n")
+                parts.append("Modify this snippet. Return the whole snippet, "
+                             "not a patch.\n")
+                parts.append(emission.code)
+                parts.append("")
+        parts.append(f"# Request\n\n{request}")
+        messages = [{"role": "user", "content": "\n".join(parts)}]
+
+        attempts: list[Attempt] = []
+        for _ in range(max_attempts):
+            raw = self.provider.complete(VEX_SYSTEM, messages, None)
+            attempt = Attempt(raw=raw)
+            attempts.append(attempt)
+
+            code, run_over = strip_vex(raw)
+            problems: list[str] = []
+            if not code.strip():
+                problems = ["The reply contained no code."]
+            else:
+                compiled = check_source(code)
+                if not compiled.ok:
+                    problems = [i.message for i in compiled.issues] \
+                        or [compiled.raw.strip()]
+
+            if not problems:
+                report = import_vex(code, self.registry)
+                graph = report.graph
+                graph.run_over = run_over
+                # Belt and braces: what the importer drew must emit and compile
+                # too. If it does not, the fault is ours, not the model's -
+                # its code compiled. Sending it the emitter's errors would ask
+                # it to fix something it never wrote, so keep its snippet whole
+                # in one Inline VEX node instead. Fewer nodes, working code.
+                if self._check_output(graph):
+                    graph = self._as_one_inline(code, run_over)
+                    if not self._check_output(graph):
+                        return Result(True, graph, generate(graph).code,
+                                      "Kept as one Inline VEX node: the code "
+                                      "works, but VEXgraph could not break it "
+                                      "into nodes.", [], attempts,
+                                      self.provider.name)
+                else:
+                    return Result(True, graph, generate(graph).code,
+                                  report.summary(), [], attempts,
+                                  self.provider.name)
+                problems = ["The importer could not represent that code."]
+
+            attempt.problems = problems
+            messages = messages[:1] + [
+                {"role": "assistant", "content": raw},
+                {"role": "user", "content": VEX_REPAIR.format(
+                    problems="\n".join(f"- {p}" for p in problems))},
+            ]
+
+        return Result(False, None, "", "", attempts[-1].problems if attempts
+                      else ["No reply."], attempts, self.provider.name)
+
+    def _as_one_inline(self, code: str, run_over: str) -> Graph:
+        """The whole snippet as a single Inline VEX node."""
+        graph = Graph(self.registry, run_over=run_over)
+        start = graph.add("start", "start")
+        node = graph.add("inline_vex", "inline_1", code=code)
+        graph.connect(start.id, "exec", node.id, "exec", is_exec=True)
+        return graph
 
     def _parse(self, raw: str) -> tuple[dict | None, list[str]]:
         try:

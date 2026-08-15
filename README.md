@@ -232,9 +232,25 @@ panel somewhere else.
 
 ## The assistant
 
-Describe what you want; get a graph. The model **never writes VEX** — it picks
-node types from a closed catalogue and wires them by socket name, and every part
-of its answer is checked against the registry before anything is built:
+Describe what you want; get a graph. There are **two routes** to that graph,
+picked per provider (override with `route` in the worker request):
+
+- **Catalogue route** (Claude's default): the model never writes VEX — it picks
+  node types from a closed catalogue and wires them by socket name.
+- **Write-VEX route** (Local's default): the model writes plain VEX — the thing
+  every model has actually been trained on — `vcc` compiles it, and the
+  importer lowers it onto the canvas per statement, with Inline VEX as the
+  never-fatal fallback. The repair loop hands the model the compiler's own
+  line-numbered errors against its own code. The catalogue route moved the
+  task *outside* a local model's training distribution (choose from 1300
+  invented types, under a schema whose constrained decoding is what made a
+  32B model sit for 25 minutes); this route moves it back inside.
+
+Either way the guarantee is the same — **nothing reaches the canvas that vcc
+does not compile** — it just shifts where the vocabulary comes from.
+
+On the catalogue route, every part of the answer is checked against the
+registry before anything is built:
 
 | It returns | What happens |
 | --- | --- |
@@ -261,12 +277,20 @@ The catalogue sent with each request is ~18 KB: all 64 curated nodes plus up to
 40 generated VEX-function nodes matched to the request, so the long tail is
 reachable without sending 1275 entries.
 
-**About the local model.** Measured on this machine: `gemma4:12b` answered in
-26 s and self-corrected once, but wired `@N` where `@P` belonged — a graph that
-validates and compiles and does the wrong thing. `qwen3:32b` did not finish
-within 25 minutes with schema-constrained decoding. The validation layer stops
+**About the local model.** Measured on this machine, on the catalogue route:
+`gemma4:12b` answered in 26 s and self-corrected once, but wired `@N` where
+`@P` belonged — a graph that validates and compiles and does the wrong thing.
+`qwen3:32b` did not finish within 25 minutes with schema-constrained decoding.
+That measurement is what created the write-VEX route above, which is now the
+Local default.
+
+On the write-VEX route, the same request ("push each point along its normal by
+a controllable amount, default 0.2, and tint pushed points red based on how far
+they moved") took `qwen3:32b` **51 seconds and one attempt**, and produced a
+9-node graph with a `chf` channel, the push, and the tint kept as Inline VEX.
+It chose `push.z` where distance was asked for — the validation layer stops
 *impossible* graphs, not *wrong* ones; that is what the visible graph and the
-code pane are for. Treat Local as the offline fallback, not the default.
+code pane are for.
 
 **Getting the card back.** Ollama keeps a model resident after answering, which
 is the right default until you want to render. The panel shows total VRAM use
@@ -429,6 +453,29 @@ result through `vcc`. It is what stands between a misparsed signature and a node
 that quietly emits broken VEX.
 
 ## Real bugs worth knowing about
+
+### Imported VEX referenced variables that no longer existed
+
+Importing `vector push = v@N * 0.2; v@P += push; @Cd.r = length(push);`
+produced a graph whose emitted code did not compile — the pasted VEX did, the
+round-trip's did not. Two independent faults, both on the seam between
+translated nodes and the Inline VEX escape hatch:
+
+- A declaration whose value is a port and is never reassigned becomes an
+  *alias*: `push` is the multiply node's output, and no variable called `push`
+  is emitted at all. That is right for translated code, which reads the wire —
+  and wrong for a statement kept verbatim, which still says `push`. The
+  importer now re-declares such a variable (a Make Variable node fed from the
+  same wire) just before any inline statement that names it.
+- `push` is also a VEX *function*, so the emitter deliberately declares it as
+  `push_value` rather than shadow the builtin. Generated code follows that
+  rename; hand-written code cannot. Inline VEX is now rewritten to follow it.
+
+Found by pointing a local model at the write-VEX route — its code compiled and
+the round-trip's did not, which is exactly the case the belt-and-braces check
+after import exists to catch. If it ever fires anyway, the assistant keeps the
+model's snippet whole in one Inline VEX node rather than feeding it errors
+about code it never wrote.
 
 ### The scene index could crash Houdini
 

@@ -125,6 +125,28 @@ def _readable(detail: str, node_id: str, graph: Graph | None) -> str:
     return f"{label} produced code the compiler rejected: {detail}"
 
 
+def check_source(code: str) -> CompileResult:
+    """Compile a raw wrangle snippet that has no graph behind it.
+
+    Used by the write-VEX assistant route: the errors come back numbered
+    against the model's own lines, which is the shape a model is best at
+    fixing. No node blame — there are no nodes yet.
+    """
+    if not code.strip():
+        return CompileResult(True, skipped="nothing to compile")
+    vexcheck = _vexcheck()
+    if vexcheck is None:
+        return CompileResult(
+            True, skipped="VEXpress not found next to this project; set "
+                          "VEXPRESS_PATH to compile-check generated code")
+    ok, raw = vexcheck.check(_expand_hscript(code))
+    if ok:
+        return CompileResult(True, raw)
+    issues = [Issue(line.strip(), severity=ERROR)
+              for line in raw.splitlines() if line.strip()]
+    return CompileResult(False, raw, issues)
+
+
 def build(graph: Graph, *, check: bool = True) -> tuple[Emission, CompileResult]:
     """Emit and verify in one step - the call the UI and the CLI both make."""
     from .codegen import generate  # noqa: PLC0415
