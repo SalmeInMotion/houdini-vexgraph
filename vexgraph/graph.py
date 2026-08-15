@@ -79,9 +79,15 @@ class Link:
 
 
 class Graph:
-    def __init__(self, registry: Registry, *, run_over: str = "points") -> None:
+    def __init__(self, registry: Registry, *, run_over: str = "points",
+                 name: str = "") -> None:
         self.registry = registry
         self.run_over = run_over
+        # What this expression is called. Shown on the canvas, carried into a
+        # saved snippet, and inherited from the snippet an import came from -
+        # so a graph you opened from the library still says what it is a
+        # quarter of an hour later, when the shapes have stopped being a clue.
+        self.name = name
         self.nodes: dict[str, Node] = {}
         self.links: list[Link] = []
         self._counter = 0
@@ -363,12 +369,15 @@ class Graph:
     # ------------------------------------------------------- serialisation
 
     def to_dict(self) -> dict:
-        return {
+        out = {
             "version": FORMAT_VERSION,
             "run_over": self.run_over,
             "nodes": [n.to_dict() for n in self.nodes.values()],
             "links": [x.to_dict() for x in self.links],
         }
+        if self.name:
+            out["name"] = self.name
+        return out
 
     def to_json(self, *, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent)
@@ -383,7 +392,8 @@ class Graph:
             raise ValueError(
                 f"This graph was saved by a newer version of VEXgraph "
                 f"(format {version}, this build reads {FORMAT_VERSION}).")
-        graph = cls(registry, run_over=raw.get("run_over", "points"))
+        graph = cls(registry, run_over=raw.get("run_over", "points"),
+                    name=raw.get("name", ""))
         for entry in raw.get("nodes", ()):
             node = Node(
                 id=entry["id"],

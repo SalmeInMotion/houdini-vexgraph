@@ -17,3 +17,11 @@ backup/
 # by tools/regenerate.py, so it differs per Houdini version and is not source.
 # It is committed anyway - see the README - because without it the tool has
 # only the 64 curated nodes until someone runs the generator.
+
+# Generated at runtime from the snippet stores on THIS machine, which include
+# OD's licensed content. It is what puts our snippets in Houdini's own wrangle
+# menu, and it must never be committed - this repository is public.
+houdini/VEXpressions.txt
+
+# Saved snippet stores are per-machine, not source.
+Snippets/

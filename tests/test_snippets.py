@@ -6,6 +6,8 @@ so the parser is tested against the format rather than against their content.
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 import sys
 from pathlib import Path
@@ -92,14 +94,37 @@ def test_the_local_file_actually_parses():
 
 
 def test_nothing_from_the_licensed_file_is_committed():
-    """OD's EULA forbids redistribution, so their content must stay out."""
+    """OD's EULA forbids redistribution, so their content must stay out.
+
+    Asks git what it tracks rather than scanning the disk. VEXgraph now
+    *generates* a `VEXpressions.txt` - that is how its snippets reach Houdini's
+    own wrangle menu - and it contains OD's content read from this machine. It
+    is git-ignored, and this is the test that says so: checking filenames on
+    disk would have to be loosened to allow it, while checking what git tracks
+    is the question that actually matters and gets stricter instead.
+    """
+    import subprocess
+
     root = Path(__file__).resolve().parents[1]
-    skip = {".venv", ".git", "__pycache__", ".pytest_cache"}
-    for path in root.rglob("*.txt"):
-        if skip & set(path.parts):
-            continue
-        assert "VEXpression" not in path.name, \
-            f"{path} looks like a copy of the licensed snippet file"
+    try:
+        tracked = subprocess.run(["git", "ls-files"], cwd=root, text=True,
+                                 capture_output=True, timeout=60, check=True)
+    except (OSError, subprocess.SubprocessError):
+        pytest.skip("no git here to ask")
+
+    for name in tracked.stdout.splitlines():
+        assert "VEXpression" not in name, \
+            f"{name} is tracked and looks like the licensed snippet file"
+
+    # And the file we do generate must be ignored, not merely absent today.
+    generated = snippets.VEXPRESSIONS_EXPORT
+    generated.parent.mkdir(parents=True, exist_ok=True)
+    if not generated.exists():
+        generated.write_text("# probe\n", encoding="utf8")
+    status = subprocess.run(["git", "status", "--porcelain", "--", str(generated)],
+                            cwd=root, text=True, capture_output=True, timeout=60)
+    assert not status.stdout.strip(), \
+        f"{generated} is visible to git; it must stay ignored"
 
 
 JSON_SAMPLE = """{
@@ -155,3 +180,80 @@ def test_the_same_snippet_in_both_stores_is_listed_once(monkeypatch, tmp_path):
 
     names = [s.name for s in snippets.load()]
     assert names.count("Taper on Y") == 1, f"duplicated: {names}"
+
+
+# ------------------------------------------------------- saving your own
+
+
+def test_a_saved_graph_also_lands_where_the_wrangle_looks(tmp_path, monkeypatch):
+    """OD's menu is the one you get from an Attribute Wrangle.
+
+    Writing only to our own store meant a snippet saved here was invisible from
+    the node, so the two sets could not be used interchangeably.
+    """
+    od = tmp_path / "python_panels"
+    od.mkdir()
+    monkeypatch.setattr(snippets, "OD_USER_STORE", od / "snippets.json")
+    monkeypatch.setattr(snippets, "OD_CONFIG", od / "snippets.cfg")
+    monkeypatch.setattr(snippets, "USER_STORE", tmp_path / "vexgraph_snippets.json")
+
+    written = snippets.save_user_snippet("Curve tangents", "@P.y += 1;", "note")
+    assert len(written) == 2, "ours and OD's"
+
+    stored = json.loads((od / "snippets.json").read_text(encoding="utf8"))
+    entry = next(iter(stored.values()))
+    # Exactly OD's own fields, so its manager cannot be surprised by ours.
+    assert set(entry) == {"author", "description", "name", "snippet", "type"}
+    assert entry["name"] == "Curve tangents"
+    assert base64.b64decode(entry["snippet"]).decode() == "@P.y += 1;"
+
+
+def test_saving_twice_replaces_rather_than_piles_up(tmp_path, monkeypatch):
+    monkeypatch.setattr(snippets, "USER_STORE", tmp_path / "mine.json")
+    monkeypatch.setattr(snippets, "OD_USER_STORE", tmp_path / "none" / "s.json")
+
+    snippets.save_user_snippet("Same name", "@P.y += 1;")
+    snippets.save_user_snippet("Same name", "@P.y += 2;")
+    stored = json.loads((tmp_path / "mine.json").read_text(encoding="utf8"))
+    assert len(stored) == 1
+    assert base64.b64decode(next(iter(stored.values()))["snippet"]).decode() \
+        == "@P.y += 2;"
+
+
+def test_other_peoples_entries_in_ods_store_are_left_alone(tmp_path, monkeypatch):
+    """That file is shared with OD's own manager."""
+    od = tmp_path / "python_panels"
+    od.mkdir()
+    theirs = {"27021290079170": {"name": "Taper on Y", "type": "Point Wrangles",
+                                 "snippet": "", "description": "", "author": "OD"}}
+    (od / "snippets.json").write_text(json.dumps(theirs), encoding="utf8")
+    monkeypatch.setattr(snippets, "OD_USER_STORE", od / "snippets.json")
+    monkeypatch.setattr(snippets, "OD_CONFIG", od / "snippets.cfg")
+    monkeypatch.setattr(snippets, "USER_STORE", tmp_path / "mine.json")
+
+    snippets.save_user_snippet("Mine", "@P.y += 1;")
+    stored = json.loads((od / "snippets.json").read_text(encoding="utf8"))
+    assert "27021290079170" in stored, "OD's own entry must survive"
+    assert {e["name"] for e in stored.values()} == {"Taper on Y", "Mine"}
+
+
+def test_a_configured_od_store_is_not_guessed_at(tmp_path, monkeypatch):
+    """snippets.cfg means OD was pointed elsewhere; writing blind would lie."""
+    od = tmp_path / "python_panels"
+    od.mkdir()
+    (od / "snippets.cfg").write_text("somewhere else", encoding="utf8")
+    monkeypatch.setattr(snippets, "OD_USER_STORE", od / "snippets.json")
+    monkeypatch.setattr(snippets, "OD_CONFIG", od / "snippets.cfg")
+    monkeypatch.setattr(snippets, "USER_STORE", tmp_path / "mine.json")
+
+    assert snippets.od_writable_store() is None
+    assert [p.name for p in snippets.save_user_snippet("X", "@P.y += 1;")] \
+        == ["mine.json"]
+
+
+def test_od_being_absent_costs_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(snippets, "OD_USER_STORE",
+                        tmp_path / "not_installed" / "snippets.json")
+    monkeypatch.setattr(snippets, "USER_STORE", tmp_path / "mine.json")
+    assert snippets.od_writable_store() is None
+    assert len(snippets.save_user_snippet("X", "@P.y += 1;")) == 1

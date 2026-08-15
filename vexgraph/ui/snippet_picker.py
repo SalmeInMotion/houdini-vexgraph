@@ -145,5 +145,8 @@ class SnippetPicker(QtWidgets.QDialog):
         if snippet is None:
             return
         report = import_vex(snippet.code, self.registry)
+        # The graph carries the snippet's name from here on, so what is on the
+        # canvas still says what it is once the nodes stop being a reminder.
+        report.graph.name = snippet.name
         self.chosen.emit(report.graph, f"{snippet.name} — {report.summary()}")
         self.accept()
