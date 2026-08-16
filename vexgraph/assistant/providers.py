@@ -22,6 +22,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Protocol
 
 # 127.0.0.1 rather than localhost: on Windows localhost resolves to IPv6 first,
@@ -337,6 +338,97 @@ class ClaudeProvider:
 
 # ------------------------------------------------------------------- local
 
+class ClaudeCliProvider:
+    """Claude through the Claude Code CLI, on the subscription you already pay.
+
+    The SDK provider needs an ANTHROPIC_API_KEY, which is pay-as-you-go credit
+    and separate from a Claude subscription - a distinction that is invisible
+    until the day a dialog asks for a key you do not have. The CLI is already
+    signed in, so this route asks it instead.
+
+    The trade, measured rather than assumed: every `claude -p` call is a fresh
+    session that carries Claude Code's own harness - roughly 20-40k tokens of
+    prompt before ours - and separate invocations do not share a prompt cache.
+    So it is heavier per question than the API route, and it spends
+    subscription allowance rather than API credit. For someone without an API
+    key it is the difference between using Claude and not.
+    """
+
+    name = "Claude (CLI)"
+
+    def __init__(self, model: str = DEFAULT_CLAUDE_MODEL,
+                 timeout: int = 900) -> None:
+        self.model = model
+        self.timeout = timeout
+
+    @staticmethod
+    def executable() -> str:
+        found = shutil.which("claude")
+        if found:
+            return found
+        # npm's global bin is not always on Houdini's PATH.
+        for candidate in (Path.home() / ".local" / "bin" / "claude.exe",
+                          Path.home() / ".local" / "bin" / "claude",
+                          Path.home() / "AppData" / "Roaming" / "npm"
+                          / "claude.cmd"):
+            if candidate.is_file():
+                return str(candidate)
+        return ""
+
+    def available(self) -> tuple[bool, str]:
+        if not self.executable():
+            return False, ("The Claude Code CLI was not found. Install it, or "
+                           "use the Local provider.")
+        return True, ""
+
+    def complete(self, system: str, messages: list[dict],
+                 schema: dict | None) -> str:
+        ready, why = self.available()
+        if not ready:
+            raise ProviderError(why)
+
+        # The catalogue makes this prompt large, and Windows caps a command
+        # line at ~32k characters - so it goes in on stdin, which is also what
+        # `-p` is built for.
+        prompt = "\n\n".join(str(m.get("content", "")) for m in messages)
+        command = [
+            self.executable(), "-p",
+            "--output-format", "json",
+            "--model", self.model,
+            "--system-prompt", system,
+            # No MCP servers and no tools: this is one text answer, not an
+            # agent session, and it must not touch the filesystem.
+            "--strict-mcp-config",
+            "--disallowed-tools",
+            "Bash Edit Write Read Glob Grep WebFetch WebSearch Task",
+        ]
+        try:
+            completed = subprocess.run(
+                command, input=prompt, capture_output=True, text=True,
+                timeout=self.timeout, encoding="utf-8", errors="replace",
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except subprocess.TimeoutExpired as exc:
+            raise ProviderError(
+                f"The Claude CLI did not answer within {self.timeout}s.") from exc
+        except OSError as exc:
+            raise ProviderError(f"The Claude CLI could not be run: {exc}") from exc
+
+        if completed.returncode != 0 and not completed.stdout.strip():
+            raise ProviderError(
+                completed.stderr.strip() or
+                f"The Claude CLI exited with code {completed.returncode}.")
+        try:
+            envelope = json.loads(completed.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError) as exc:
+            raise ProviderError(
+                "The Claude CLI returned something this could not read: "
+                f"{completed.stdout.strip()[:200]}") from exc
+        if envelope.get("is_error"):
+            raise ProviderError(
+                str(envelope.get("result") or "The Claude CLI reported an error."))
+        return str(envelope.get("result", ""))
+
+
 class OllamaProvider:
     """A model running on this machine, through Ollama.
 
@@ -427,7 +519,9 @@ def all_providers() -> dict[str, Provider]:
     the function instead of the module and only found out at the first
     attribute access.
     """
-    return {"Claude": ClaudeProvider(), "Local": OllamaProvider()}
+    return {"Claude": ClaudeProvider(),
+            "Claude (CLI)": ClaudeCliProvider(),
+            "Local": OllamaProvider()}
 
 
 def get(name: str, model: str = "") -> Provider:

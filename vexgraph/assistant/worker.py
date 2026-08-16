@@ -44,7 +44,12 @@ def run(request: dict) -> dict:
     # by choosing from the invented node catalogue under a giant schema; the
     # parser lowers their code onto the canvas. Claude keeps the catalogue
     # route, which it is good at. `route` overrides either way.
-    route = request.get("route") or ("vex" if provider.name == "Local" else "catalog")
+    # The CLI route joins the local one: `claude -p` has no structured-output
+    # switch, so asking for our catalogue JSON would lean on a schema nobody
+    # is enforcing. Writing VEX plays to what Claude is best at, and the
+    # importer - which every other path already trusts - turns it into nodes.
+    free_text = provider.name in ("Local", "Claude (CLI)")
+    route = request.get("route") or ("vex" if free_text else "catalog")
     if route == "vex":
         result = assistant.build_graph_via_vex(request["text"], current)
     else:

@@ -190,10 +190,21 @@ otro rincón viven ahí hoy.
 
 Pide con tus palabras — "empuja los puntos por sus normales, más arriba
 del todo" — y elige si la respuesta llega como nodos o como
-explicación. Los modelos locales corren en tu propia máquina (y se
-descargan de la memoria solos cuando llevan un rato sin usarse); las
-respuestas que construyen grafos pasan por el mismo importador y los
-mismos checks de compilador que todo lo demás.
+explicación. Tres proveedores:
+
+- **Claude** — el SDK oficial. Necesita una `ANTHROPIC_API_KEY`, que es
+  crédito de pago por uso y *no* es lo mismo que una suscripción a
+  Claude: tener la suscripción no te da una clave.
+- **Claude (CLI)** — el CLI de Claude Code en el que ya estás
+  identificado. Sin clave; gasta cupo de tu suscripción. Más lento por
+  pregunta, porque cada llamada arrastra el contexto propio de Claude
+  Code antes que el tuyo, y las llamadas no comparten caché entre sí.
+- **Local** — un modelo en tu máquina vía Ollama. No cuesta nada, se
+  descarga de memoria solo, y es el más propenso a cablear algo
+  plausible pero incorrecto.
+
+Las respuestas que construyen grafos pasan por el mismo importador y
+los mismos checks de compilador que todo lo demás.
 
 ## Cuando algo pinta mal
 

@@ -226,9 +226,15 @@ class AssistantPanel(QtWidgets.QWidget):
         self._last_request = ""
 
         self.provider = QtWidgets.QComboBox()
-        self.provider.addItems(["Claude", "Local"])
+        self.provider.addItems(["Claude", "Claude (CLI)", "Local"])
         self.provider.setToolTip(
-            "Claude is markedly better at picking the right nodes.\n"
+            "Claude is markedly better at picking the right nodes. It needs\n"
+            "an ANTHROPIC_API_KEY - pay-as-you-go credit, which is separate\n"
+            "from a Claude subscription.\n\n"
+            "Claude (CLI) asks the Claude Code CLI you are already signed\n"
+            "into, so it needs no key and spends subscription allowance\n"
+            "instead. It is slower per question, because each call carries\n"
+            "Claude Code's own context before yours.\n\n"
             "Local runs on this machine and costs nothing, but is slower\n"
             "and more likely to wire something plausible but wrong.")
         self.provider.currentTextChanged.connect(self._fill_models)
@@ -387,7 +393,7 @@ class AssistantPanel(QtWidgets.QWidget):
         that is not installed only produces a failure several seconds later.
         """
         self.model.clear()
-        if provider == "Claude":
+        if provider.startswith("Claude"):
             for name, label in CLAUDE_MODELS:
                 self.model.addItem(label, name)
             return

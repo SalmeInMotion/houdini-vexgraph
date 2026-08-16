@@ -178,9 +178,21 @@ why. `do...while` loops and a few other corners live there today.
 
 Ask in your own words — "push points along their normals, more at the
 top" — and choose whether the answer arrives as nodes or as an
-explanation. Local models run on your own machine (and unload
-themselves when idle); answers that build graphs go through the same
-importer and the same compiler checks as everything else.
+explanation. Three providers:
+
+- **Claude** — the official SDK. Needs an `ANTHROPIC_API_KEY`, which is
+  pay-as-you-go credit and is *not* the same thing as a Claude
+  subscription: having the subscription does not give you a key.
+- **Claude (CLI)** — the Claude Code CLI you are already signed into.
+  No key, spends subscription allowance instead. Slower per question,
+  because every call carries Claude Code's own context before yours,
+  and separate calls do not share a prompt cache.
+- **Local** — a model on your own machine through Ollama. Costs
+  nothing, unloads itself when idle, and is the most likely to wire
+  something plausible but wrong.
+
+Answers that build graphs go through the same importer and the same
+compiler checks as everything else.
 
 ## When something looks wrong
 
