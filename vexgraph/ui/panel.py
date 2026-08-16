@@ -121,6 +121,9 @@ class VexGraphEditor(QtWidgets.QWidget):
     """The whole editor. Embeddable in a Houdini Python Panel or run alone."""
 
     applied = QtCore.Signal(str)      # the VEX, when the user asks to apply it
+    # A Learn exercise asking its host to build the geometry it wants. Only a
+    # host that owns a scene (the Houdini panel) can answer it.
+    scene_requested = QtCore.Signal(object)
 
     def __init__(self, registry: Registry | None = None,
                  graph: Graph | None = None, parent=None):
@@ -134,6 +137,9 @@ class VexGraphEditor(QtWidgets.QWidget):
         self._open_function = ""
         self._section_state: dict[str, dict] = {}
         self._section_toggles: dict[str, object] = {}
+        # Learn's focus mode, when the course is open: the node types the
+        # library and Tab search are narrowed to. None means everything.
+        self._node_focus: set[str] | None = None
         # Which sections were folded away last time. Small enough to belong in
         # the platform's own settings rather than a file of our own.
         self._settings = settings.store()
@@ -347,6 +353,8 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.learn = LearnPanel(lambda: self.graph)
         self.learn.ask_professor.connect(self._professor)
         self.learn.open_manual.connect(self._open_help)
+        self.learn.focus_changed.connect(self.set_node_focus)
+        self.learn.scene_requested.connect(self.scene_requested)
 
         right = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         code_side = QtWidgets.QWidget()
@@ -474,6 +482,13 @@ class VexGraphEditor(QtWidgets.QWidget):
             state["folded"] = not state["folded"]
             apply()
             self._settings.setValue(f"folded/{key}", state["folded"])
+            if key == "learn":
+                # Focus belongs to the open course: folding it away gives the
+                # whole library back, opening it narrows again.
+                if state["folded"]:
+                    self.learn.release_focus()
+                else:
+                    self.learn._push_focus()
 
         label.clicked.connect(toggle)
         apply()
@@ -1041,6 +1056,16 @@ class VexGraphEditor(QtWidgets.QWidget):
         dialog.setModal(False)
         dialog.show()
 
+    def set_node_focus(self, types: set[str] | None) -> None:
+        """Narrow the library (and Tab search) to a set of node types.
+
+        Learn's focus mode: five or ten nodes to choose from instead of the
+        whole registry, which for someone on their second exercise is not a
+        library but a wall.
+        """
+        self._node_focus = types
+        self.browser.set_focus(types)
+
     def _professor(self, question: str) -> None:
         """The Learn panel's question, delivered to the assistant with the
         exercise already attached - and the assistant brought into view."""
@@ -1064,7 +1089,10 @@ class VexGraphEditor(QtWidgets.QWidget):
 
     def _search_at(self, scene_pos: QtCore.QPointF, port=None) -> None:
         dialog = (search_for_port(self.registry, self.graph, port) if port
-                  else NodeSearch(self.registry))
+                  else NodeSearch(self.registry, focus=self._node_focus))
+        if port is not None:
+            dialog.focus = self._node_focus       # Tab from a port, same rule
+            dialog.repopulate(dialog.field.text())
         self._search = dialog
 
         def place(node_type: str) -> None:

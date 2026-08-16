@@ -125,6 +125,15 @@ class NodeBrowser(QtWidgets.QWidget):
         self.search.textChanged.connect(self.tree.filter)
         self.tree.populate()
 
+    def set_focus(self, types: set[str] | None) -> None:
+        """Show only these node types, or all of them when given None."""
+        self.tree.focus = types
+        self.search.setPlaceholderText(
+            f"Search all {sum(1 for _ in self.registry)} nodes..."
+            if types is None else
+            f"{len(types)} nodes for this exercise")
+        self.tree.populate(self.search.text())
+
     def reveal(self, node_type: str) -> bool:
         """Open the library at this node's home, neighbours in view.
 
@@ -246,6 +255,9 @@ class NodeTree(QtWidgets.QTreeWidget):
     def __init__(self, registry: Registry, parent=None):
         super().__init__(parent)
         self.registry = registry
+        # Learn's focus mode: the node types the course has reached, or None
+        # for the whole library.
+        self.focus: set[str] | None = None
         self.setHeaderHidden(True)
         self.setIndentation(12)
         self.setFont(theme.ui_font(9))
@@ -272,6 +284,20 @@ class NodeTree(QtWidgets.QTreeWidget):
 
     def populate(self, query: str = "") -> None:
         self.clear()
+        if self.focus is not None:
+            # Focus mode ignores the query's reach into the whole registry:
+            # the point is that there is nothing else to find yet.
+            grouped: dict[str, list[NodeDef]] = {}
+            words = query.lower().split()
+            for definition in self.registry:
+                if definition.type not in self.focus:
+                    continue
+                haystack = f"{definition.label} {definition.type}".lower()
+                if words and not all(w in haystack for w in words):
+                    continue
+                grouped.setdefault(definition.category, []).append(definition)
+            self._build_groups(grouped, expand=True)
+            return
         if query.strip():
             # Searching reaches the whole registry, including the generated
             # VEX functions the tree deliberately hides.
@@ -306,6 +332,17 @@ class NodeTree(QtWidgets.QTreeWidget):
                 item.setToolTip(0, summary)
             parent.setExpanded(True)
 
+        self._build_groups(grouped, expand=bool(query.strip()))
+
+        # With nothing typed, open the groups a beginner needs first and leave
+        # the rest folded, so the whole library is legible at a glance.
+        if not query.strip():
+            for index in range(self.topLevelItemCount()):
+                item = self.topLevelItem(index)
+                item.setExpanded(item.text(0) in ("Flow", "Attributes"))
+
+    def _build_groups(self, grouped: dict[str, list[NodeDef]],
+                      expand: bool) -> None:
         for category in sorted(grouped):
             parent = QtWidgets.QTreeWidgetItem(self, [category])
             parent.setForeground(0, QtGui.QBrush(QtGui.QColor("#8fa4b0")))
@@ -331,14 +368,7 @@ class NodeTree(QtWidgets.QTreeWidget):
                     item.setIcon(0, QtGui.QIcon(pixmap))
                 if definition.tier == 2:
                     item.setForeground(0, QtGui.QBrush(QtGui.QColor("#909090")))
-            parent.setExpanded(bool(query.strip()))
-
-        # With nothing typed, open the groups a beginner needs first and leave
-        # the rest folded, so the whole library is legible at a glance.
-        if not query.strip():
-            for index in range(self.topLevelItemCount()):
-                item = self.topLevelItem(index)
-                item.setExpanded(item.text(0) in ("Flow", "Attributes"))
+            parent.setExpanded(expand)
 
     def filter(self, query: str) -> None:
         self.populate(query)

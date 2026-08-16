@@ -1689,3 +1689,59 @@ def test_a_make_vector_solution_counts_as_solved(student):
                         st.ports[("exec", True)])
     student.learn.check()
     assert "Solved" in student.learn.verdict.text()
+
+
+def test_focus_mode_narrows_the_library_to_the_exercise(student):
+    """Ivan's ask: five or ten nodes to choose from, not 1360."""
+    from vexgraph import learn
+
+    student.learn._push_focus()
+    allowed = learn.allowed_upto(0)
+    assert len(allowed) < 10
+    assert student._node_focus == allowed
+    assert "nodes for this exercise" in \
+        student.browser.search.placeholderText().lower()
+
+    shown = set()
+    tree = student.browser.tree
+    for index in range(tree.topLevelItemCount()):
+        category = tree.topLevelItem(index)
+        for row in range(category.childCount()):
+            shown.add(category.child(row).data(
+                0, QtCore.Qt.ItemDataRole.UserRole))
+    assert shown and shown <= allowed, shown - allowed
+
+    # Tab search obeys the same rule.
+    dialog = NodeSearch(student.registry, focus=allowed)
+    dialog.repopulate("")
+    listed = {dialog.list.item(i).data(QtCore.Qt.ItemDataRole.UserRole)
+              for i in range(dialog.list.count())}
+    assert listed <= allowed
+    dialog.deleteLater()
+
+
+def test_focus_grows_with_the_course_and_can_be_switched_off(student):
+    from vexgraph import learn
+
+    early = len(learn.allowed_upto(0))
+    late = len(learn.allowed_upto(len(learn.BEGINNER) - 1))
+    assert early < late, "later exercises keep what earlier ones taught"
+
+    student.learn.focus_box.setChecked(False)
+    assert student._node_focus is None
+    assert "search all" in student.browser.search.placeholderText().lower()
+
+
+def test_folding_the_course_gives_the_whole_library_back(editor):
+    editor.learn_button.click()               # unfolds, focus on
+    assert editor._node_focus is not None
+    editor._section_toggles["learn"]()        # fold it away again
+    assert editor._node_focus is None
+
+
+def test_every_exercise_says_how_to_see_it(student):
+    from vexgraph import learn
+
+    for exercise in learn.BEGINNER:
+        assert exercise.scene is not None and exercise.scene.describe
+    assert "To see it:" in student.learn.body.toHtml()

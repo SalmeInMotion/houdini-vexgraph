@@ -241,6 +241,50 @@ def test_no_pane_to_dock_into_is_reported_not_guessed(geo):
     raise AssertionError("an empty desktop should not silently return a pane")
 
 
+
+def test_every_exercise_scene_builds_and_cooks(geo):
+    """Each Learn exercise can build its own geometry, and the result cooks.
+
+    A recipe that names a SOP wrongly, or wires Copy to Points backwards
+    (the thing to copy goes in input 0, the points in input 1), must fail
+    here - not in front of someone on their second exercise.
+    """
+    from vexgraph import learn                                # noqa: PLC0415
+
+    for exercise in learn.BEGINNER:
+        scene = exercise.scene
+        assert scene is not None, exercise.key
+        wrangle = geo.createNode("attribwrangle", f"w_{exercise.key}")
+        wrangle.parm("snippet").set(exercise.solution)
+        made = vh.build_scene_nodes(geo, wrangle, scene)
+        assert made, exercise.key
+
+        last = made[-1]
+        geometry = last.geometry()          # raises if anything fails to cook
+        assert len(geometry.points()) > 0, f"{exercise.key} produced no points"
+        # The wrangle really is fed by the scene, not left dangling.
+        assert wrangle.inputs() and wrangle.inputs()[0] is not None, exercise.key
+
+
+def test_the_falloff_scene_copies_onto_the_wrangled_points(geo):
+    """Copy to Points wired the wrong way round still cooks - and produces
+    the wrong thing. This pins the order down."""
+    from vexgraph import learn                                # noqa: PLC0415
+
+    exercise = next(e for e in learn.BEGINNER if e.key == "falloff")
+    wrangle = geo.createNode("attribwrangle", "w_falloff_order")
+    wrangle.parm("snippet").set(exercise.solution)
+    made = vh.build_scene_nodes(geo, wrangle, exercise.scene)
+    copy = made[-1]
+    assert copy.type().name().startswith("copytopoints")
+    # input 1 is the point cloud: it must be the wrangle, not the sphere.
+    # By path, not by identity: HOM hands back a fresh wrapper each call, so
+    # `is` compares two different Python objects for the same node.
+    assert copy.inputs()[1].path() == wrangle.path()
+    # 20x20 grid points, each with a sphere copied onto it.
+    assert len(copy.geometry().points()) > len(wrangle.geometry().points())
+
+
 def _run() -> int:
     checks = [(n, f) for n, f in sorted(globals().items())
               if n.startswith("test_") and callable(f)]

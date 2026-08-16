@@ -19,6 +19,8 @@ from . import settings, theme
 class LearnPanel(QtWidgets.QWidget):
     ask_professor = QtCore.Signal(str)        # question, exercise attached
     open_manual = QtCore.Signal()
+    focus_changed = QtCore.Signal(object)     # set[str] of node types, or None
+    scene_requested = QtCore.Signal(object)   # learn.Scene to build
 
     def __init__(self, get_graph, parent=None):
         super().__init__(parent)
@@ -36,6 +38,18 @@ class LearnPanel(QtWidgets.QWidget):
         self.body.anchorClicked.connect(self._follow)
         self.body.setFont(theme.ui_font(9))
 
+        self.focus_box = QtWidgets.QCheckBox("Focus")
+        self.focus_box.setChecked(True)
+        self.focus_box.setToolTip(
+            "Show only the nodes this exercise needs - and the ones earlier "
+            "exercises taught. Turn it off to reach the whole library.")
+        self.focus_box.toggled.connect(lambda _: self._push_focus())
+        self.scene_button = QtWidgets.QPushButton("Set up the scene")
+        self.scene_button.setToolTip(
+            "Build the geometry this exercise wants and wire it to the "
+            "wrangle, so you can see what you are doing.")
+        self.scene_button.clicked.connect(
+            lambda: self.scene_requested.emit(self.exercise.scene))
         self.check_button = QtWidgets.QPushButton("Check my graph")
         self.hint_button = QtWidgets.QPushButton("Hint")
         self.professor_button = QtWidgets.QPushButton("Ask the professor")
@@ -53,6 +67,8 @@ class LearnPanel(QtWidgets.QWidget):
         buttons = QtWidgets.QHBoxLayout()
         buttons.setContentsMargins(8, 4, 8, 8)
         buttons.addWidget(self.back_button)
+        buttons.addWidget(self.focus_box)
+        buttons.addWidget(self.scene_button)
         buttons.addWidget(self.check_button, 1)
         buttons.addWidget(self.hint_button)
         buttons.addWidget(self.professor_button)
@@ -74,6 +90,8 @@ class LearnPanel(QtWidgets.QWidget):
 
         self._index = self._first_unsolved()
         self._show()
+        # No focus until the course is actually opened; the signal is
+        # connected by the panel, which pushes it when Learn unfolds.
 
     # ------------------------------------------------------------- persistence
 
@@ -116,6 +134,11 @@ class LearnPanel(QtWidgets.QWidget):
             f"  Beginner {self._index + 1}/{len(self._course)}   {dots}")
         parts = [f"<h3>{exercise.title}{' ✓' if done else ''}</h3>",
                  f"<p><b>{exercise.goal}</b></p>"]
+        if exercise.scene is not None:
+            # An exercise whose result is invisible teaches nothing.
+            parts.append(
+                "<p style='color:#8fa4b0'>To see it: "
+                f"{exercise.scene.describe}</p>")
         if exercise.nodes:
             # Naming the search word is the difference between "add a node"
             # and a beginner staring at 1360 of them.
@@ -150,6 +173,17 @@ class LearnPanel(QtWidgets.QWidget):
         self._index = max(0, min(len(self._course) - 1, self._index + step))
         self._hints_shown = 0
         self._show()
+        self._push_focus()
+
+    def _push_focus(self) -> None:
+        """Tell the library how much of itself to show right now."""
+        self.focus_changed.emit(
+            learn.allowed_upto(self._index) if self.focus_box.isChecked()
+            else None)
+
+    def release_focus(self) -> None:
+        """Called when the course is folded away: the library is whole again."""
+        self.focus_changed.emit(None)
 
     # --------------------------------------------------------------- actions
 

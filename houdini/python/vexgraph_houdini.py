@@ -98,6 +98,56 @@ def add_open_button(node) -> bool:
     return True
 
 
+def build_scene_nodes(network, wrangle, scene) -> list:
+    """Wire an exercise's geometry around `wrangle`. Returns what it made.
+
+    Kept out of the panel class so it can be tested headlessly - a scene
+    recipe that names a SOP wrongly, or wires Copy to Points backwards, is
+    exactly the kind of thing that must fail in CI rather than in front of
+    someone on their second exercise.
+    """
+    made = []
+    previous = None
+    for sop_type, params in scene.upstream:
+        node = network.createNode(sop_type)
+        for name, value in params.items():
+            parm = node.parm(name)
+            if parm is not None:
+                parm.set(value)
+        if previous is not None:
+            node.setFirstInput(previous)
+        made.append(node)
+        previous = node
+    if previous is not None:
+        wrangle.setFirstInput(previous)
+
+    previous = wrangle
+    for index, (sop_type, params) in enumerate(scene.downstream):
+        node = network.createNode(sop_type)
+        for name, value in params.items():
+            parm = node.parm(name)
+            if parm is not None:
+                parm.set(value)
+        if index == 0 and scene.helper is not None:
+            # Copy to Points takes the thing to copy on input 0 and the
+            # points to copy it onto on input 1 - the other way round reads
+            # naturally and produces nothing.
+            helper_type, helper_params = scene.helper
+            helper = network.createNode(helper_type)
+            for name, value in helper_params.items():
+                parm = helper.parm(name)
+                if parm is not None:
+                    parm.set(value)
+            made.append(helper)
+            node.setInput(0, helper)
+            node.setInput(1, previous)
+        else:
+            node.setFirstInput(previous)
+        made.append(node)
+        previous = node
+    return made
+
+
 def is_wrangle(node) -> bool:
     """Whether this node can hold a graph and the VEX it generates.
 
@@ -155,6 +205,7 @@ class VexGraphPanel(QtWidgets.QWidget):
 
         self.editor = VexGraphEditor(self.registry, parent=self)
         self.editor.applied.connect(self._apply)
+        self.editor.scene_requested.connect(self.build_scene)
 
         # One control instead of three. Opening from a wrangle's "Edit in
         # VEXgraph" button already says which wrangle you mean, so attaching
@@ -229,6 +280,29 @@ class VexGraphPanel(QtWidgets.QWidget):
                 if node.childTypeCategory() == hou.sopNodeTypeCategory():
                     return node
         return None
+
+    # ---------------------------------------------------------- learn scenes
+
+    def build_scene(self, scene) -> None:
+        """Build an exercise's geometry around the attached wrangle.
+
+        A lesson you cannot see is not a lesson, and asking a beginner to
+        assemble a Grid, a Copy to Points and a small Sphere before they may
+        start is asking them to already know Houdini. One button does it.
+        """
+        node = self.node()
+        if node is None:
+            hou.ui.displayMessage("Attach a wrangle first.")
+            return
+        if scene is None:
+            return
+        network = node.parent()
+        with hou.undos.group("VEXgraph exercise scene"):
+            made = build_scene_nodes(network, node, scene)
+        if made:
+            made[-1].setDisplayFlag(True)
+            made[-1].setRenderFlag(True)
+        network.layoutChildren()
 
     # -------------------------------------------------------------- applying
 

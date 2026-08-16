@@ -21,12 +21,16 @@ class NodeSearch(QtWidgets.QDialog):
     chosen = QtCore.Signal(str)
 
     def __init__(self, registry: Registry, parent=None, *,
-                 accepts: str = "", produces: str = "", exec_only: bool = False):
+                 accepts: str = "", produces: str = "", exec_only: bool = False,
+                 focus: set[str] | None = None):
         super().__init__(parent, QtCore.Qt.WindowType.Popup)
         self.registry = registry
         self.accepts = accepts        # the node must take this type as input
         self.produces = produces      # the node must give this type as output
         self.exec_only = exec_only
+        # Learn's focus mode: only the node types the course has reached so
+        # far. None means the whole library.
+        self.focus = focus
         self._accepted = False
         self.setMinimumWidth(430)
 
@@ -75,6 +79,8 @@ class NodeSearch(QtWidgets.QDialog):
     # ----------------------------------------------------------- the filter
 
     def _fits(self, definition: NodeDef) -> bool:
+        if self.focus is not None and definition.type not in self.focus:
+            return False
         if self.exec_only:
             return definition.has_exec and definition.exec_in
         if self.accepts:

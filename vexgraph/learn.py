@@ -38,6 +38,22 @@ class Check:
 
 
 @dataclass(frozen=True)
+class Scene:
+    """How to actually SEE this exercise's result.
+
+    An exercise whose result is invisible teaches nothing, so each one names
+    the geometry it wants - and, inside Houdini, can build it: the nodes
+    upstream of the wrangle, anything downstream needed to show the result
+    (copying spheres onto points, to see a size or a direction), and the
+    helper that downstream node copies.
+    """
+    describe: str
+    upstream: tuple[tuple[str, dict], ...] = ()
+    downstream: tuple[tuple[str, dict], ...] = ()
+    helper: tuple[str, dict] | None = None
+
+
+@dataclass(frozen=True)
 class Exercise:
     key: str
     title: str
@@ -45,6 +61,11 @@ class Exercise:
     steps: str           # the guided path, markdown-ish plain text
     hints: tuple[str, ...]
     checks: tuple[Check, ...]
+    # The node types this exercise introduces. Focus mode shows these plus
+    # everything earlier exercises introduced - five or ten to choose from
+    # instead of 1360, which is the difference between looking and drowning.
+    allowed: tuple[str, ...] = ()
+    scene: Scene | None = None
     # What to hunt for in the library: (what to type after Tab, the node it
     # finds, what it is for). A beginner facing 1360 nodes cannot be told
     # "add a node" - they have to be told the word to type.
@@ -119,6 +140,11 @@ BEGINNER: tuple[Exercise, ...] = (
             ("make vector", "make_vector",
              "optional: builds a vector out of three separate numbers"),
         ),
+        allowed=("attrib_set", "make_vector"),
+        scene=Scene(
+            describe="Any geometry with points will do; a Sphere shows "
+                     "colour best. Connect it to the wrangle's first input.",
+            upstream=(("sphere", {"type": 2, "rows": 30, "cols": 30}),)),
         hints=(
             "Colour is an attribute called Cd. Changing how a point looks "
             "means writing one of its attributes.",
@@ -160,6 +186,11 @@ BEGINNER: tuple[Exercise, ...] = (
             ("set component", "attrib_set_component",
              "writes one part (x, y or z) of a vector attribute"),
         ),
+        allowed=("attrib_set_component",),
+        scene=Scene(
+            describe="A Sphere into the wrangle's first input - watch it "
+                     "become a disc.",
+            upstream=(("sphere", {"type": 2, "rows": 30, "cols": 30}),)),
         hints=(
             "P is position, and in Houdini y is the up axis.",
             "Set Component changes one part and leaves the other two as they "
@@ -210,6 +241,13 @@ BEGINNER: tuple[Exercise, ...] = (
             ("add", "add", "adds two values"),
             ("set attribute", "attrib_set", "writes an attribute"),
         ),
+        allowed=("attrib_get", "multiply", "add"),
+        scene=Scene(
+            describe="A Sphere into the first input. (@N exists on a "
+                     "surface even with no Normal SOP - Houdini works it "
+                     "out. On loose points it would read zero and nothing "
+                     "would move.)",
+            upstream=(("sphere", {"type": 2, "rows": 30, "cols": 30}),)),
         hints=(
             "Read, combine, write. Get Attribute reads, the maths nodes "
             "combine, Set Attribute writes.",
@@ -256,6 +294,10 @@ BEGINNER: tuple[Exercise, ...] = (
         nodes=(
             ("multiply", "multiply", "the node whose value you are replacing"),
         ),
+        allowed=(),
+        scene=Scene(
+            describe="The same Sphere as before.",
+            upstream=(("sphere", {"type": 2, "rows": 30, "cols": 30}),)),
         hints=(
             "Channels are typed into a value row - they are parameters, not "
             "nodes, so there is nothing to search for.",
@@ -303,6 +345,11 @@ BEGINNER: tuple[Exercise, ...] = (
             ("if else", "if_else", "runs one branch or the other"),
             ("set attribute", "attrib_set", "one in each branch"),
         ),
+        allowed=("modulo", "is_equal", "if_else"),
+        scene=Scene(
+            describe="A Grid into the first input: lots of points in rows, "
+                     "so the stripes are obvious.",
+            upstream=(("grid", {"rows": 30, "cols": 30}),)),
         hints=(
             "ptnum % 2 == 0 is the classic 'is it even' test - the remainder "
             "of dividing by two is zero.",
@@ -356,6 +403,11 @@ BEGINNER: tuple[Exercise, ...] = (
             ("make vector", "make_vector", "three numbers into a colour"),
             ("set attribute", "attrib_set", "writes Cd"),
         ),
+        allowed=("fit_range",),
+        scene=Scene(
+            describe="A Sphere into the first input. Its height runs from "
+                     "-1 to 1, which is exactly the range you will fit.",
+            upstream=(("sphere", {"type": 2, "rows": 30, "cols": 30}),)),
         hints=(
             "A vector output can give you its parts directly: double-click "
             "the output dot to reveal .x .y .z pins.",
@@ -407,6 +459,11 @@ BEGINNER: tuple[Exercise, ...] = (
             ("add", "add", "adds the nudge to the position"),
             ("set attribute", "attrib_set", "writes P"),
         ),
+        allowed=("random_vector", "subtract"),
+        scene=Scene(
+            describe="A Grid into the first input - a tidy row of points "
+                     "makes the scatter easy to see.",
+            upstream=(("grid", {"rows": 30, "cols": 30}),)),
         hints=(
             "Random Vector needs a Seed; the point's own number is the "
             "classic choice, and it is why the result is stable.",
@@ -454,6 +511,15 @@ BEGINNER: tuple[Exercise, ...] = (
             ("fit", "fit_range", "remaps the distance into a size"),
             ("set attribute", "attrib_set", "writes pscale, Type float"),
         ),
+        allowed=("length",),
+        scene=Scene(
+            describe="A Grid into the first input, and a Copy to Points "
+                     "after the wrangle with a small Sphere - pscale is a "
+                     "number, and copied spheres are how you see it.",
+            upstream=(("grid", {"rows": 20, "cols": 20}),),
+            downstream=(("copytopoints", {}),),
+            helper=("sphere", {"type": 2, "rows": 8, "cols": 8,
+                               "radx": 0.05, "rady": 0.05, "radz": 0.05})),
         hints=(
             "pscale is what instancing and rendering read as per-point size.",
             "Fitting 0..2 onto 1..0 - the new range backwards - is what "
@@ -495,6 +561,15 @@ BEGINNER: tuple[Exercise, ...] = (
             ("normalize", "normalize", "keeps the direction, sets length 1"),
             ("set attribute", "attrib_set", "writes N"),
         ),
+        allowed=("negate", "normalize"),
+        scene=Scene(
+            describe="A Grid into the first input, and a Copy to Points "
+                     "after the wrangle with a small Tube - copies line up "
+                     "with N, so you can see where each point looks.",
+            upstream=(("grid", {"rows": 12, "cols": 12}),),
+            downstream=(("copytopoints", {}),),
+            helper=("tube", {"type": 1, "rad1": 0.02, "rad2": 0.02,
+                             "height": 0.2})),
         hints=(
             "Toward the origin from P is simply -P: the direction back to "
             "zero.",
@@ -545,6 +620,11 @@ BEGINNER: tuple[Exercise, ...] = (
             ("multiply", "multiply", "the step, and the push along N"),
             ("add", "add", "position plus push"),
         ),
+        allowed=("for_range", "add_point"),
+        scene=Scene(
+            describe="A small Grid into the first input - few points, so "
+                     "the five-point trails stay readable.",
+            upstream=(("grid", {"rows": 6, "cols": 6}),)),
         hints=(
             "The Repeat node's Number output counts the passes and only "
             "exists inside its body - wiring it outside is an error the "
@@ -571,6 +651,24 @@ BEGINNER: tuple[Exercise, ...] = (
                   "    addpoint(0, @P + @N * (0.1 * i));\n}"),
     ),
 )
+
+
+# On the canvas from the start, or needed to read any graph at all.
+ALWAYS_ALLOWED = ("start", "note")
+
+
+def allowed_upto(index: int) -> set[str]:
+    """Every node type the course has introduced by this exercise.
+
+    Cumulative on purpose: exercise 7 can still reach for Set Attribute.
+    What it hides is the other 1350 - which for a beginner is not a library,
+    it is a wall.
+    """
+    allowed = set(ALWAYS_ALLOWED)
+    for exercise in BEGINNER[:index + 1]:
+        allowed.update(exercise.allowed)
+        allowed.update(node_type for _term, node_type, _why in exercise.nodes)
+    return allowed
 
 
 @dataclass
