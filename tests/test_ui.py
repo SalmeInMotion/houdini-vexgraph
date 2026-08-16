@@ -1420,3 +1420,68 @@ def test_apply_button_hides_while_live_is_on(editor):
     assert not editor.apply_button.isHidden()
     editor.auto_apply.setChecked(True)
     assert editor.apply_button.isHidden()
+
+
+# ------------------------------------------------------- feedback round two
+
+def test_live_applies_however_the_graph_arrived(editor):
+    """Ctrl+Enter, Open, Keep - a replaced document reaches the wrangle."""
+    shipped = []
+    editor.applied.connect(shipped.append)
+    editor.code.setPlainText("@P.y += 1;")
+    editor.build_from_code()
+    assert shipped and "@P.y" in shipped[-1]
+
+
+def test_a_proposal_never_ships_until_kept(editor):
+    """The assistant's proposal on screen must not touch the wrangle; Keep
+    is the consent - and then it ships immediately."""
+    from vexgraph.parser import import_vex
+    shipped = []
+    editor.applied.connect(shipped.append)
+    proposal = import_vex("@P.x += 2;", editor.registry).graph
+    editor._propose(proposal, "", "")
+    editor._auto_apply()
+    assert not shipped
+    editor._keep_proposal()
+    assert shipped and "@P.x" in shipped[-1]
+
+
+def test_custom_function_library_round_trip(editor, monkeypatch, tmp_path):
+    from vexgraph import userfns
+    monkeypatch.setattr(userfns, "STORE", tmp_path / "fns.json")
+    editor.code.setPlainText(
+        "int twice(int a){ return a * 2; }\ni@x = twice(3);")
+    editor.build_from_code()
+    editor._save_function("twice")
+    assert userfns.names() == ["twice"]
+
+    editor.code.setPlainText("i@y = 1;")        # a fresh document
+    editor.build_from_code()
+    assert "twice" not in editor.graph.functions
+    editor._place_from_browser("fn_twice")
+    assert "twice" in editor.graph.functions
+    assert any(n.type == "fn_twice" for n in editor.graph.nodes.values())
+    editor._regenerate()
+    assert "int twice(int a)" in editor.code.toPlainText()
+
+    userfns.remove("twice")
+    assert userfns.names() == []
+
+
+def test_status_is_only_red_for_real_errors(editor):
+    editor._show_message("3 of 4 statements became nodes")
+    assert "e05a5a" not in editor.status.styleSheet()
+    editor._show_message("that did not work", error=True)
+    assert "e05a5a" in editor.status.styleSheet()
+
+
+def test_the_help_dialog_carries_both_manuals(app):
+    from vexgraph.ui.helpdialog import HelpDialog
+    dialog = HelpDialog()
+    tabs = dialog.findChild(QtWidgets.QTabWidget)
+    assert tabs.count() == 2
+    for index, needle in ((0, "VEXgraph"), (1, "manual de uso")):
+        text = tabs.widget(index).toPlainText()
+        assert needle in text
+    dialog.deleteLater()

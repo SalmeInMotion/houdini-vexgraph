@@ -680,6 +680,7 @@ class GraphView(QtWidgets.QGraphicsView):
     help_requested = QtCore.Signal(str)          # node type
     function_opened = QtCore.Signal(str)         # user-function name
     collapse_requested = QtCore.Signal()         # selection -> function
+    save_function_requested = QtCore.Signal(str)  # fn name -> user library
 
     def __init__(self, scene: GraphScene, parent=None):
         super().__init__(scene, parent)
@@ -879,6 +880,13 @@ class GraphView(QtWidgets.QGraphicsView):
                             "function; what fed them becomes its inputs.")
         collapse.setEnabled(bool(selected))
         collapse.setData("collapse")
+        if (len(selected) == 1
+                and selected[0].node.type.startswith("fn_")):
+            name = selected[0].node.type[3:]
+            keep = menu.addAction(f"Save {name}() to my library")
+            keep.setToolTip("Keep this function in the Custom section of the "
+                            "library, usable from any graph.")
+            keep.setData("save_fn")
         menu.addSeparator()
         menu.addAction("Add node...").setData("add")
         return menu
@@ -896,6 +904,11 @@ class GraphView(QtWidgets.QGraphicsView):
             self.scene().delete_selected()
         elif chosen.data() == "collapse":
             self.collapse_requested.emit()
+        elif chosen.data() == "save_fn":
+            selected = [i for i in self.scene().selectedItems()
+                        if isinstance(i, NodeItem)]
+            if selected:
+                self.save_function_requested.emit(selected[0].node.type[3:])
         elif chosen.data() == "add":
             self.request_node_search(
                 self.mapToScene(self.mapFromGlobal(screen_pos)))

@@ -129,8 +129,14 @@ def function_call_def(signature: FunctionSignature) -> NodeDef:
     input per parameter and the return value as its output.
     """
     from .nodedefs import SocketDef      # local to dodge a cycle at import
-    inputs = tuple(SocketDef(name, f"{vex_type}[]" if is_array else vex_type)
-                   for vex_type, name, is_array in signature.params)
+    # Each input carries its type's zero as a default, so a freshly placed
+    # call - nothing wired yet - still emits provisional code instead of
+    # blanking the whole document with a "needs a value" error.
+    inputs = []
+    for vex_type, name, is_array in signature.params:
+        full = f"{vex_type}[]" if is_array else vex_type
+        inputs.append(SocketDef(name, full, default=vextypes.zero(full)))
+    inputs = tuple(inputs)
     args = ", ".join("{%s}" % name for _, name, _ in signature.params)
     if signature.return_type == "void":
         outputs: tuple = ()

@@ -270,6 +270,26 @@ class NodeTree(QtWidgets.QTreeWidget):
                     continue
                 grouped.setdefault(definition.category, []).append(definition)
 
+        # The user's own saved functions, first: they asked for these by name.
+        from .. import userfns                                  # noqa: PLC0415
+        saved = userfns.summaries()
+        if query.strip():
+            needle = query.strip().lower()
+            saved = {n: s for n, s in saved.items() if needle in n.lower()}
+        if saved:
+            parent = QtWidgets.QTreeWidgetItem(self, ["Custom"])
+            parent.setForeground(0, QtGui.QBrush(QtGui.QColor("#b0a48f")))
+            font = parent.font(0)
+            font.setBold(True)
+            parent.setFont(0, font)
+            parent.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled)
+            for name, summary in saved.items():
+                item = QtWidgets.QTreeWidgetItem(parent, [f"{name}()"])
+                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, f"fn_{name}")
+                item.setData(0, QtCore.Qt.ItemDataRole.UserRole + 1, "custom")
+                item.setToolTip(0, summary)
+            parent.setExpanded(True)
+
         for category in sorted(grouped):
             parent = QtWidgets.QTreeWidgetItem(self, [category])
             parent.setForeground(0, QtGui.QBrush(QtGui.QColor("#8fa4b0")))
@@ -306,6 +326,20 @@ class NodeTree(QtWidgets.QTreeWidget):
 
     def filter(self, query: str) -> None:
         self.populate(query)
+
+    def contextMenuEvent(self, event) -> None:
+        item = self.itemAt(event.pos())
+        if (item is None
+                or item.data(0, QtCore.Qt.ItemDataRole.UserRole + 1) != "custom"):
+            return
+        from .. import userfns                                  # noqa: PLC0415
+        name = item.data(0, QtCore.Qt.ItemDataRole.UserRole)[3:]
+        menu = QtWidgets.QMenu(self)
+        menu.addAction(f"Remove {name}() from library").setData("remove")
+        chosen = menu.exec(event.globalPos())
+        if chosen is not None and chosen.data() == "remove":
+            userfns.remove(name)
+            self.populate("")
 
     def _chosen(self, item: QtWidgets.QTreeWidgetItem, _column: int) -> None:
         node_type = item.data(0, QtCore.Qt.ItemDataRole.UserRole)

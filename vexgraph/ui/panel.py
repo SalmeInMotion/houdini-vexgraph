@@ -266,12 +266,6 @@ class VexGraphEditor(QtWidgets.QWidget):
                        self.text_larger):
             bar.addWidget(widget)
 
-        self.prefs_button = QtWidgets.QPushButton("⚙")
-        self.prefs_button.setFixedWidth(32)
-        self.prefs_button.setToolTip(
-            "Preferences: grid size, node spacing.")
-        bar.addSpacing(6)
-        bar.addWidget(self.prefs_button)
 
         # Where a host (the Houdini panel) puts its own controls, so there is
         # one row of buttons instead of a second strip above this one - which
@@ -283,6 +277,16 @@ class VexGraphEditor(QtWidgets.QWidget):
         bar.addLayout(self.host_slot)
 
         bar.addStretch(1)
+
+        # Right-aligned, out of the way of the work: help, then preferences.
+        self.help_button = QtWidgets.QPushButton("Help EN/ES")
+        self.help_button.setToolTip("The manual, in English and Spanish.")
+        bar.addWidget(self.help_button)
+        self.prefs_button = QtWidgets.QPushButton("⚙")
+        self.prefs_button.setToolTip("Preferences: grid size, node spacing.")
+        self.prefs_button.setStyleSheet(
+            "QPushButton { padding: 5px 8px; min-width: 22px; }")
+        bar.addWidget(self.prefs_button)
 
         self.status = QtWidgets.QLabel("")
         self.status.setFont(theme.ui_font(8))
@@ -830,6 +834,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.view.help_requested.connect(self.open_help_for)
         self.view.function_opened.connect(self.enter_function)
         self.view.collapse_requested.connect(self._collapse_dialog)
+        self.view.save_function_requested.connect(self._save_function)
         self.code.line_clicked.connect(self._select_from_code)
         self.code.edited.connect(self._code_edited)
         self.code.commit_requested.connect(self.build_from_code)
@@ -839,6 +844,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.text_smaller.clicked.connect(lambda: self._nudge_text_size(-1))
         self.text_larger.clicked.connect(lambda: self._nudge_text_size(+1))
         self.prefs_button.clicked.connect(self._open_preferences)
+        self.help_button.clicked.connect(self._open_help)
         self.browser.node_chosen.connect(self._place_from_browser)
         self.assistant.proposed.connect(self._propose)
         self.assistant.kept.connect(self._keep_proposal)
@@ -849,6 +855,19 @@ class VexGraphEditor(QtWidgets.QWidget):
 
     def _place_from_browser(self, node_type: str) -> None:
         """Double-clicking the library drops the node in the middle of the view."""
+        # A Custom-section function first has to exist in THIS document:
+        # placing it copies the definition in, so the emitted VEX stays
+        # self-contained and editing the copy never rewrites the library.
+        if node_type.startswith("fn_"):
+            name = node_type[3:]
+            if name not in self.graph.functions:
+                from .. import userfns                          # noqa: PLC0415
+                inner = userfns.load(name, self.registry)
+                if inner is None:
+                    self._show_message(f"{name}() is not in the library any "
+                                       f"more.", error=True)
+                    return
+                self.graph.define_function(inner)
         centre = self.view.mapToScene(self.view.viewport().rect().center())
         self.scene.add_node(node_type, centre)
 
@@ -861,7 +880,15 @@ class VexGraphEditor(QtWidgets.QWidget):
 
     def _keep_proposal(self) -> None:
         self._graph_before_proposal = None
-        self._show_message("Kept. Press Apply to Wrangle to write it out.")
+        # Keeping is consent: with Live on, the wrangle gets it right now.
+        # (The screenshot that found this bug showed a kept graph in the code
+        # pane and last week's VEX still running in the wrangle - "press the
+        # Apply button" was the old message, and the button was hidden.)
+        self._auto_apply()
+        if self.auto_apply.isChecked():
+            self._show_message("Kept, and written to the wrangle.")
+        else:
+            self._show_message("Kept. Apply to Wrangle writes it out.")
 
     def _discard_proposal(self) -> None:
         if self._graph_before_proposal is not None:
@@ -916,10 +943,13 @@ class VexGraphEditor(QtWidgets.QWidget):
             placeholder.setForeground(QtGui.QBrush(QtGui.QColor("#6a8a6a")))
             self.issues.addItem(placeholder)
 
-    def _show_message(self, text: str) -> None:
+    def _show_message(self, text: str, *, error: bool = False) -> None:
+        """Status line. Red is reserved for things that actually went wrong -
+        it used to colour every informative sentence too, which read as a
+        wall of alarms for a tool that was working fine."""
         self.status.setText(text)
-        colour = "#e05a5a" if text and "compiles" not in text else "#7a9a7a"
-        self.status.setStyleSheet(f"color: {colour};")
+        self.status.setStyleSheet(
+            f"color: {'#e05a5a' if error else '#9a9a9a'};")
 
     # ------------------------------------------------------------ selection
 
@@ -963,6 +993,12 @@ class VexGraphEditor(QtWidgets.QWidget):
         if prefs.PreferencesDialog(self).exec():
             self._show_message("Preferences saved. Tidy re-lays the graph "
                                "with the new spacing.")
+
+    def _open_help(self) -> None:
+        from .helpdialog import HelpDialog                      # noqa: PLC0415
+        dialog = HelpDialog(self)
+        dialog.setModal(False)
+        dialog.show()
 
     def _set_text_size(self, value: str) -> None:
         theme.set_ui_scale(int(value.rstrip("%")) / 100)
@@ -1056,7 +1092,7 @@ class VexGraphEditor(QtWidgets.QWidget):
 
         if self.scene.graph is not self.graph:
             self._show_message("Collapse from the main graph, not from "
-                               "inside a function.")
+                               "inside a function.", error=True)
             return False
         selected = {item.node.id for item in self.scene.selectedItems()
                     if isinstance(item, NodeItem)}
@@ -1078,7 +1114,7 @@ class VexGraphEditor(QtWidgets.QWidget):
             self.graph = Graph.from_dict(snapshot, self.registry)
             self._show_scene()
             self.assistant.set_graph(self.graph)
-            self._show_message(error)
+            self._show_message(error, error=True)
             return False
         self._show_scene()
         self._record_history()
@@ -1086,6 +1122,16 @@ class VexGraphEditor(QtWidgets.QWidget):
         self._show_message(f"Collapsed into {name}() — double-click the "
                            f"call to step inside.")
         return True
+
+    def _save_function(self, name: str) -> None:
+        from .. import userfns                                  # noqa: PLC0415
+        inner = self.graph.functions.get(name)
+        if inner is None:
+            return
+        userfns.save(inner)
+        self.browser.tree.populate("")
+        self._show_message(f"{name}() saved to your library — it is in the "
+                           f"Custom section, for any graph.")
 
     def _collapse_dialog(self) -> None:
         name, accepted = QtWidgets.QInputDialog.getText(
@@ -1129,6 +1175,10 @@ class VexGraphEditor(QtWidgets.QWidget):
         # The assistant needs the current graph to answer "change this" requests.
         self.assistant.set_graph(self.graph)
         self._regenerate()
+        # A replaced document (Open, Ctrl+Enter, Keep) must reach the wrangle
+        # the same as an edited one - Live means live, whichever door the
+        # graph came in through.
+        self._auto_apply()
         self.view.frame_all()
 
     def _apply(self) -> None:
@@ -1158,6 +1208,8 @@ class VexGraphEditor(QtWidgets.QWidget):
         """
         if not self.auto_apply.isChecked():
             return
+        if self._graph_before_proposal is not None:
+            return          # a proposal is on screen; nothing ships until Keep
         emission = self._last_emission or generate(self.graph)
         if not emission.ok or emission.code == self._applied_code:
             return
