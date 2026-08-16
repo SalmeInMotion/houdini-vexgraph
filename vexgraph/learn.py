@@ -87,6 +87,21 @@ def _has_node(graph: Graph, *types: str) -> bool:
 
 
 _SET_CALL = re.compile(r"\bset\(([^()]*)\)")
+_NUMBER = re.compile(r"(?<![\w.])[-+]?(?:\d+\.\d*|\.\d+|\d+)(?![\w.])")
+# In a check, `#` stands for any number: the lesson is the shape of the
+# expression, not whether someone pushed by 0.1 or 0.2.
+ANY_NUMBER = "#"
+
+
+def _canonical_number(match: re.Match) -> str:
+    """`.1`, `0.10` and `0.1` are one number written three ways."""
+    try:
+        value = float(match.group(0))
+    except ValueError:
+        return match.group(0)
+    if value == int(value):
+        return str(int(value))
+    return repr(round(value, 6)).rstrip("0")
 
 
 def _normalise(text: str) -> str:
@@ -94,15 +109,30 @@ def _normalise(text: str) -> str:
 
     A student who builds a colour with a Make Vector node emits
     `@Cd = set(1, 0, 0);` where typing the value straight into the row emits
-    `@Cd = {1, 0, 0};`. VEX cannot tell those apart and neither may a course:
-    marking a correct graph wrong is the worst thing a teacher can do.
+    `@Cd = {1, 0, 0};`. Typing `.1` is the same number as `0.1`. VEX cannot
+    tell any of those apart and neither may a course: marking a correct graph
+    wrong is the worst thing a teacher can do, and the fastest way to make
+    someone give up on something they had actually got right.
     """
-    return "".join(_SET_CALL.sub(lambda m: "{" + m.group(1) + "}", text).split())
+    text = _SET_CALL.sub(lambda m: "{" + m.group(1) + "}", text)
+    text = _NUMBER.sub(_canonical_number, text)
+    return "".join(text.split())
 
 
 def _code_has(code: str, *needles: str) -> bool:
     normalised = _normalise(code)
-    return all(_normalise(n) in normalised for n in needles)
+    for needle in needles:
+        wanted = _normalise(needle)
+        if ANY_NUMBER in wanted:
+            pattern = "".join(
+                r"[-+]?(?:\d+\.\d*|\.\d+|\d+)" if part == ANY_NUMBER
+                else re.escape(part)
+                for part in re.split(f"({re.escape(ANY_NUMBER)})", wanted))
+            if not re.search(pattern, normalised):
+                return False
+        elif wanted not in normalised:
+            return False
+    return True
 
 
 BEGINNER: tuple[Exercise, ...] = (
@@ -259,12 +289,12 @@ BEGINNER: tuple[Exercise, ...] = (
                   "Attribute N and Type vector.",
                   lambda g, c: _code_has(c, "@N")),
             Check("Scale the push down: a Multiply node (Type vector) with "
-                  "0.1 in the other side.",
-                  lambda g, c: _has_node(g, "multiply") and _code_has(c, "0.1")),
+                  "a small number in the other side - 0.1 is a good start.",
+                  lambda g, c: _has_node(g, "multiply")),
             Check("Now add that onto the position and write it back: an Add "
                   "node into a Set Attribute on P.",
-                  lambda g, c: _code_has(c, "@P = @P + @N * 0.1;")
-                  or _code_has(c, "@P = @N * 0.1 + @P;")),
+                  lambda g, c: _code_has(c, "@P = @P + @N * #;")
+                  or _code_has(c, "@P = @N * # + @P;")),
         ),
         deeper=(
             ("SideFX: common attributes (P, N, Cd...)",
@@ -478,7 +508,8 @@ BEGINNER: tuple[Exercise, ...] = (
                   "can go both ways.",
                   lambda g, c: _code_has(c, "0.5")),
             Check("Scale it down and add it onto P, then write P back.",
-                  lambda g, c: _code_has(c, "@P") and _has_node(g, "attrib_set")),
+                  lambda g, c: _code_has(c, "@P") and _has_node(g, "attrib_set")
+                  and _has_node(g, "multiply")),
         ),
         deeper=(
             ("SideFX: rand()", f"{SIDEFX}/vex/functions/rand.html"),
@@ -640,8 +671,8 @@ BEGINNER: tuple[Exercise, ...] = (
                   lambda g, c: _has_node(g, "add_point", "vex_addpoint")
                   and _code_has(c, "addpoint(")),
             Check("Each new point steps further out: the Repeat's Number "
-                  "times 0.1, along N, added to P.",
-                  lambda g, c: _code_has(c, "@N") and _code_has(c, "0.1")),
+                  "scaled by a small number, along N, added to P.",
+                  lambda g, c: _code_has(c, "@N") and _has_node(g, "multiply")),
         ),
         deeper=(
             ("SideFX: addpoint()", f"{SIDEFX}/vex/functions/addpoint.html"),

@@ -50,6 +50,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         # that lands it. Dragging never sets this.
         self._sticky = False
         self._editor: QtWidgets.QGraphicsProxyWidget | None = None
+        self._editor_row = None       # the row that editor is sitting on
 
         # No BSP index. Qt's spatial index purges removed items on a
         # zero-delay timer, so an item destroyed before that timer runs leaves
@@ -223,6 +224,21 @@ class GraphScene(QtWidgets.QGraphicsScene):
         self.graph_changed.emit()
         return len(created)
 
+    def toggle_bypass(self) -> None:
+        """Houdini's B: the selected nodes stay wired and stop working."""
+        items = [i for i in self.selectedItems() if isinstance(i, NodeItem)
+                 and i.node.type != "start"]
+        if not items:
+            return
+        # One decision for the whole selection, from the first node - so a
+        # mixed selection lands somewhere predictable instead of inverting
+        # node by node.
+        state = not items[0].node.bypassed
+        for item in items:
+            item.node.bypassed = state
+            item.update()
+        self.graph_changed.emit()
+
     def delete_selected(self) -> None:
         # Deleting the node whose row is being edited left the editor proxy
         # alive and `is_editing` stuck - which silently killed Delete and
@@ -270,6 +286,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
 
     def node_moved(self, item: NodeItem) -> None:
         self.refresh_links()
+        self.follow_editor()
 
     def value_changed(self, item: NodeItem, *, retyped: bool) -> None:
         if retyped:
@@ -480,6 +497,10 @@ class GraphScene(QtWidgets.QGraphicsScene):
         proxy.setPos(row.mapToScene(rect.topLeft()))
         line.setFixedSize(int(rect.width()), int(rect.height()))
         self._editor = proxy
+        # Remembered so the box can follow its row: the editor is a scene
+        # item, not a child of the node, so a node that moves or snaps to the
+        # grid mid-edit used to leave its own text box floating behind.
+        self._editor_row = row
 
         def commit() -> None:
             row.set_value(line.text())
@@ -606,7 +627,18 @@ class GraphScene(QtWidgets.QGraphicsScene):
         """Whether a field on a node currently owns the keyboard."""
         return self._editor is not None
 
+    def follow_editor(self) -> None:
+        """Keep the open text box on top of the row it is editing."""
+        if self._editor is None or self._editor_row is None:
+            return
+        row = self._editor_row
+        if row.scene() is not self:
+            self._close_editor()
+            return
+        self._editor.setPos(row.mapToScene(row.boundingRect().topLeft()))
+
     def _close_editor(self) -> None:
+        self._editor_row = None
         if self._editor is not None:
             editor, self._editor = self._editor, None
             self.removeItem(editor)
@@ -914,6 +946,14 @@ class GraphView(QtWidgets.QGraphicsView):
                             "function; what fed them becomes its inputs.")
         collapse.setEnabled(bool(selected))
         collapse.setData("collapse")
+        bypassable = [i for i in selected if i.node.type != "start"]
+        if bypassable:
+            bypass = menu.addAction(
+                "Un-bypass (B)" if bypassable[0].node.bypassed
+                else "Bypass (B)")
+            bypass.setToolTip("Leave it wired, stop it working - a step emits "
+                              "nothing, a value hands its input straight on.")
+            bypass.setData("bypass")
         if len(selected) == 1:
             from .. import favourites                          # noqa: PLC0415
             node_type = selected[0].node.type
@@ -949,6 +989,8 @@ class GraphView(QtWidgets.QGraphicsView):
             return
         if chosen.data() == "delete":
             self.scene().delete_selected()
+        elif chosen.data() == "bypass":
+            self.scene().toggle_bypass()
         elif chosen.data() == "collapse":
             self.collapse_requested.emit()
         elif chosen.data() == "save_fn":
@@ -1013,7 +1055,8 @@ class GraphView(QtWidgets.QGraphicsView):
     # an embedded panel.
     CLAIMED_KEYS = frozenset({
         QtCore.Qt.Key.Key_Delete, QtCore.Qt.Key.Key_Backspace,
-        QtCore.Qt.Key.Key_Tab, QtCore.Qt.Key.Key_F, QtCore.Qt.Key.Key_Escape,
+        QtCore.Qt.Key.Key_Tab, QtCore.Qt.Key.Key_F, QtCore.Qt.Key.Key_B,
+        QtCore.Qt.Key.Key_Escape,
         QtCore.Qt.Key.Key_Z, QtCore.Qt.Key.Key_Y,
         QtCore.Qt.Key.Key_C, QtCore.Qt.Key.Key_X, QtCore.Qt.Key.Key_V,
     })
@@ -1059,6 +1102,9 @@ class GraphView(QtWidgets.QGraphicsView):
         elif key == QtCore.Qt.Key.Key_Tab:
             centre = self.mapToScene(self.viewport().rect().center())
             self.request_node_search(centre)
+            event.accept()
+        elif key == QtCore.Qt.Key.Key_B:
+            self.scene().toggle_bypass()
             event.accept()
         elif key == QtCore.Qt.Key.Key_F:
             self.frame_all()

@@ -923,8 +923,17 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self._paint_title(painter)
         if self.is_note:
             self._paint_note(painter)
-            return
-        self._paint_port_labels(painter)
+        else:
+            self._paint_port_labels(painter)
+        if self.node.bypassed:
+            # Houdini's own language for it: struck through, and faded, so a
+            # bypassed node is obvious without reading anything.
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            painter.setBrush(QtGui.QColor(30, 30, 30, 150))
+            painter.drawRoundedRect(body, theme.NODE_RADIUS, theme.NODE_RADIUS)
+            painter.setPen(QtGui.QPen(QtGui.QColor("#d0a55a"), 2))
+            painter.drawLine(body.topLeft() + QtCore.QPointF(6, 6),
+                             body.bottomRight() - QtCore.QPointF(6, 6))
 
     def _paint_title(self, painter: QtGui.QPainter) -> None:
         font = theme.ui_font(9)

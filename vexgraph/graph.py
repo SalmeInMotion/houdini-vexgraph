@@ -51,6 +51,11 @@ class Node:
     params: dict[str, str] = field(default_factory=dict)
     title: str = ""          # user override for the header text
     pos: tuple[float, float] = (0.0, 0.0)
+    # Houdini's B key: the node stays wired but stops doing anything. A step
+    # emits nothing and the run order flows past it; a value node hands one of
+    # its inputs straight to whatever it feeds, so bypassing an Add leaves the
+    # expression alive without the addition.
+    bypassed: bool = False
 
     def to_dict(self) -> dict:
         out: dict = {"id": self.id, "type": self.type}
@@ -58,6 +63,8 @@ class Node:
             out["params"] = dict(self.params)
         if self.title:
             out["title"] = self.title
+        if self.bypassed:
+            out["bypass"] = True
         out["pos"] = [self.pos[0], self.pos[1]]
         return out
 
@@ -291,6 +298,32 @@ class Graph:
                 f"{node.id}: {param.title} is {value!r}, which is not a VEX type")
         return value
 
+    def passthrough_socket(self, node: Node | str) -> str:
+        """Which input a bypassed value node hands on, or "" if none can.
+
+        The first input that could stand in for the output: wired if
+        possible, and of a type the output's consumers will accept. Bypassing
+        a Multiply hands on whichever side is actually plugged in, which is
+        what "as if this node were not here" has to mean for a value.
+        """
+        node = self.nodes[node] if isinstance(node, str) else node
+        definition = self.definition(node)
+        if not definition.outputs:
+            return ""
+        wanted = self.socket_type(node, definition.outputs[0].name,
+                                  is_input=False)
+        candidates = [s.name for s in definition.inputs]
+        wired = [name for name in candidates
+                 if self.source_of(node.id, name) is not None]
+        for name in wired + candidates:
+            try:
+                have = self.socket_type(node, name, is_input=True)
+            except (KeyError, ValueError):
+                continue
+            if have == wanted or vextypes.can_connect(have, wanted):
+                return name
+        return ""
+
     def source_of(self, node_id: str, input_socket: str) -> Link | None:
         return next((x for x in self.links
                      if not x.is_exec and x.to_node == node_id
@@ -519,6 +552,7 @@ class Graph:
                 params={k: str(v) for k, v in entry.get("params", {}).items()},
                 title=entry.get("title", ""),
                 pos=tuple(entry.get("pos", (0.0, 0.0))),
+                bypassed=bool(entry.get("bypass", False)),
             )
             graph.nodes[node.id] = node
         for entry in raw.get("links", ()):

@@ -606,6 +606,8 @@ class VexGraphEditor(QtWidgets.QWidget):
             # Houdini binds Tab to its own node menu, so inside a docked panel
             # it never reaches the canvas without being claimed here first.
             action = self._search_at_centre
+        elif key == QtCore.Qt.Key.Key_B and not modifiers:
+            action = self.scene.toggle_bypass
 
         if action is None:
             return super().eventFilter(watched, event)

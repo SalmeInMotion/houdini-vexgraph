@@ -499,6 +499,8 @@ class Emitter:
         self.emitted.add(node_id)
         node = self.graph.nodes[node_id]
         definition = self.graph.definition(node)
+        if node.bypassed:
+            return []          # its consumers read straight through it
         if definition.builtin:
             return self._emit_builtin(node, definition)
 
@@ -517,6 +519,11 @@ class Emitter:
         self.emitted.add(node_id)
         node = self.graph.nodes[node_id]
         definition = self.graph.definition(node)
+        if node.bypassed:
+            # The run order still flows through it - the chain is unbroken -
+            # it simply does nothing. A bypassed loop or branch takes its body
+            # with it, which is what "as if this node were not here" means.
+            return []
         if definition.builtin:
             return self._emit_builtin(node, definition)
         if not definition.code:
@@ -621,6 +628,20 @@ class Emitter:
         source_node = self.graph.nodes[link.from_node]
         source_def = self.graph.definition(source_node)
         got = self.graph.socket_type(source_node, link.from_socket, is_input=False)
+
+        if source_node.bypassed and source_def.kind == "pure":
+            # Hand on whatever it was given. Recursive on purpose: a run of
+            # bypassed nodes passes the value along the whole way.
+            through = self.graph.passthrough_socket(source_node)
+            if not through:
+                self.issues.append(Issue(
+                    f"{source_def.label} is bypassed, but nothing wired into "
+                    f"it can stand in for its output.", source_node.id))
+                return vextypes.zero(want)
+            inner = self._input_expression(source_node, through, context,
+                                           right_of_nonassoc)
+            have = self.graph.socket_type(source_node, through, is_input=True)
+            return vextypes.cast_expression(inner, have, want)
 
         # A component pin reads one part of the source: `@P.y`, `(a + b).x`.
         # The source composes at ATOM precedence because `.` binds tighter

@@ -125,8 +125,10 @@ class LearnPanel(QtWidgets.QWidget):
     def exercise(self) -> learn.Exercise:
         return self._course[self._index]
 
-    def _show(self) -> None:
+    def _show(self, keep_scroll: bool = True, to_bottom: bool = False) -> None:
         exercise = self.exercise
+        bar = self.body.verticalScrollBar()
+        was_at = bar.value()
         done = exercise.key in self.progress.completed
         dots = "".join("●" if e.key in self.progress.completed else "○"
                        for e in self._course)
@@ -159,6 +161,14 @@ class LearnPanel(QtWidgets.QWidget):
                 f"<a href='{url}'>{label}</a>" for label, url in exercise.deeper)
             parts.append(f"<p style='color:#8a8a8a'>Go deeper: {links}</p>")
         self.body.setHtml("".join(parts))
+        # setHtml throws the reader back to the top, which on a long exercise
+        # means every Hint costs you your place. The new hint is at the
+        # bottom, so that is where a hint scrolls to; anything else keeps the
+        # position it had.
+        if to_bottom:
+            bar.setValue(bar.maximum())
+        elif keep_scroll:
+            bar.setValue(min(was_at, bar.maximum()))
         self.verdict.setText("")
         # Always walkable. Locking the way forward until an exercise is
         # solved meant a student whose CORRECT graph was not recognised had
@@ -220,7 +230,7 @@ class LearnPanel(QtWidgets.QWidget):
                 self.progress.hints_used.get(exercise.key, 0),
                 self._hints_shown)
             self._save_progress()
-            self._show()
+            self._show(to_bottom=True)
 
     def _call_professor(self) -> None:
         exercise = self.exercise

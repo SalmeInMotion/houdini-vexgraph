@@ -1960,3 +1960,92 @@ def test_notes_survive_the_round_trip(registry):
     first = generate(import_vex(source, registry).graph).code
     assert "// remember why" in first and "// and a tail note" in first
     assert first == generate(import_vex(first, registry).graph).code
+
+
+def test_a_hint_keeps_your_place_instead_of_jumping_to_the_top(student):
+    """setHtml throws the reader back to the top, so every Hint cost you the
+    line you were reading. The new hint is at the bottom; that is where it
+    scrolls."""
+    student.learn.body.setFixedHeight(60)      # force something to scroll
+    QtWidgets.QApplication.processEvents()
+    bar = student.learn.body.verticalScrollBar()
+
+    student.learn._reveal_hint()
+    QtWidgets.QApplication.processEvents()
+    assert bar.value() == bar.maximum(), "a hint should show itself"
+
+    # Any other refresh keeps the position it had.
+    bar.setValue(bar.maximum() // 2)
+    kept = bar.value()
+    student.learn._show()
+    QtWidgets.QApplication.processEvents()
+    assert bar.value() == min(kept, bar.maximum())
+
+
+# --------------------------------------------------------------- bypass
+
+def test_bypassing_a_value_node_keeps_the_expression_alive(editor):
+    """Ivan's question: bypass an Add and the rest should still work."""
+    editor.code.setPlainText("@P = @P + @N * 0.5;")
+    editor.build_from_code()
+    add = next(i for i in editor.scene.node_items.values()
+               if i.node.type == "add")
+    add.setSelected(True)
+    editor.scene.toggle_bypass()
+    editor._regenerate()
+
+    code = editor.code.toPlainText()
+    assert "@P = @P;" in code, code
+    assert "@N" not in code.split("\n")[-2]
+
+
+def test_bypassing_a_step_emits_nothing_and_leaves_the_chain(editor):
+    editor.code.setPlainText("@P.y = 1;\n@Cd = {1, 0, 0};")
+    editor.build_from_code()
+    first = next(i for i in editor.scene.node_items.values()
+                 if i.node.type == "attrib_set_component")
+    first.setSelected(True)
+    editor.scene.toggle_bypass()
+    editor._regenerate()
+
+    code = editor.code.toPlainText()
+    assert "@P.y" not in code
+    assert "@Cd" in code, "the rest of the chain still runs"
+
+
+def test_bypass_survives_saving_and_the_start_node_refuses(editor):
+    editor.code.setPlainText("@P.y = 1;")
+    editor.build_from_code()
+    item = next(i for i in editor.scene.node_items.values()
+                if i.node.type == "attrib_set_component")
+    item.setSelected(True)
+    editor.scene.toggle_bypass()
+
+    clone = Graph.from_dict(editor.graph.to_dict(), editor.registry)
+    assert any(n.bypassed for n in clone.nodes.values())
+
+    editor.scene.clearSelection()
+    editor.scene.node_items["start"].setSelected(True)
+    editor.scene.toggle_bypass()
+    assert not editor.graph.nodes["start"].bypassed
+
+
+def test_the_open_editor_follows_a_node_that_moves(editor):
+    """A node snapping to the grid mid-edit used to leave its own text box
+    floating where the node had been."""
+    editor.show()
+    QtWidgets.QApplication.processEvents()
+    item = editor.scene.add_node("multiply", QtCore.QPointF(0, 0))
+    row = next(r for r in item.rows if r.key.startswith("param:")
+               or r.key.startswith("in:"))
+    editor.scene.edit_row(row)
+    QtWidgets.QApplication.processEvents()
+
+    before = editor.scene._editor.pos()
+    item.setPos(item.pos() + QtCore.QPointF(120, 80))
+    QtWidgets.QApplication.processEvents()
+    after = editor.scene._editor.pos()
+
+    assert after != before
+    expected = row.mapToScene(row.boundingRect().topLeft())
+    assert (after - expected).manhattanLength() < 1.0

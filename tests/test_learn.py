@@ -70,3 +70,37 @@ def test_progress_ranks_struggle():
         attempts={"paint": 1, "stripes": 6, "trail": 3},
         hints_used={"stripes": 2, "trail": 1})
     assert progress.weakest()[0] == "stripes"
+
+
+# ------------------------------------------------- a teacher worth having
+
+def test_the_same_number_written_differently_still_counts(registry):
+    """`.1` is `0.1`. Marking that wrong is how you make someone give up on
+    something they had actually got right."""
+    for spelling in (".1", "0.1", "0.10"):
+        report = import_vex(f"@P = @P + @N * {spelling};", registry)
+        exercise = next(e for e in learn.BEGINNER if e.key == "inflate")
+        assert exercise.review(report.graph) == "", spelling
+
+
+def test_a_different_push_still_counts(registry):
+    """The lesson is read-combine-write, not the exact amount."""
+    exercise = next(e for e in learn.BEGINNER if e.key == "inflate")
+    for amount in ("0.05", "0.5", "2"):
+        report = import_vex(f"@P = @P + @N * {amount};", registry)
+        assert exercise.review(report.graph) == "", amount
+
+
+def test_leniency_has_limits(registry):
+    """Tolerant about spelling, not about meaning: subtracting is not adding."""
+    exercise = next(e for e in learn.BEGINNER if e.key == "inflate")
+    report = import_vex("@P = @P - @N * 0.1;", registry)
+    assert exercise.review(report.graph) != ""
+
+
+def test_a_colour_typed_or_built_both_count(registry):
+    exercise = next(e for e in learn.BEGINNER if e.key == "paint")
+    for spelling in ("@Cd = {1, 0, 0};", "@Cd = set(1, 0, 0);",
+                     "@Cd = set(1.0, 0.0, 0.0);"):
+        report = import_vex(spelling, registry)
+        assert exercise.review(report.graph) == "", spelling
