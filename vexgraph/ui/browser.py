@@ -173,7 +173,7 @@ class NodeBrowser(QtWidgets.QWidget):
         if self._doc_url:
             QtGui.QDesktopServices.openUrl(QtCore.QUrl(self._doc_url))
 
-    def describe(self, node_type: str) -> None:
+    def describe(self, node_type: str, status: str = "") -> None:
         """Show this node's help, wherever the interest in it came from.
 
         Public because the canvas drives it too: selecting a node in the graph
@@ -192,6 +192,11 @@ class NodeBrowser(QtWidgets.QWidget):
             return
 
         parts = [f"<b style='color:#d8d8d8'>{definition.label}</b>"]
+        # What is wrong with THIS instance, when the canvas is what pointed
+        # us here. The only thing the old second pane knew that this one did
+        # not, so it moved rather than being lost.
+        if status:
+            parts.append(f"<span style='color:#e05a5a'>{status}</span>")
         if definition.summary:
             parts.append(definition.summary)
         if definition.help:

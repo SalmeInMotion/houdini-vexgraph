@@ -31,11 +31,12 @@ CLICK_SLOP = 6
 
 class GraphScene(QtWidgets.QGraphicsScene):
     graph_changed = QtCore.Signal()
-    selection_described = QtCore.Signal(str)
-    # The type of the single selected node, so the library's detail pane can
-    # follow the canvas: whichever node you touched last is the one described,
-    # whether you reached it through the tree or by clicking it in the graph.
-    selection_typed = QtCore.Signal(str)
+    # The selected node's type and its problem, if it has one, so the
+    # library's detail pane can follow the canvas: whichever node you touched
+    # last is the one described, whether you reached it through the tree or
+    # by clicking it in the graph. One pane, not two - there used to be a
+    # second, smaller copy of this on the right, saying strictly less.
+    selection_typed = QtCore.Signal(str, str)
     message = QtCore.Signal(str)
 
     def __init__(self, graph: Graph, parent=None):
@@ -621,20 +622,10 @@ class GraphScene(QtWidgets.QGraphicsScene):
     def _describe_selection(self) -> None:
         nodes = [i for i in self.selectedItems() if isinstance(i, NodeItem)]
         if len(nodes) != 1:
-            self.selection_described.emit("")
-            self.selection_typed.emit("")
+            self.selection_typed.emit("", "")
             return
         item = nodes[0]
-        definition = item.definition
-        self.selection_typed.emit(definition.type)
-        parts = [f"<b>{definition.label}</b>"]
-        if definition.summary:
-            parts.append(definition.summary)
-        if definition.help:
-            parts.append(f"<i>{definition.help}</i>")
-        if item.status_text:
-            parts.append(f"<span style='color:#e05a5a'>{item.status_text}</span>")
-        self.selection_described.emit("<br>".join(parts))
+        self.selection_typed.emit(item.definition.type, item.status_text)
 
     def selected_node_id(self) -> str:
         nodes = [i for i in self.selectedItems() if isinstance(i, NodeItem)]

@@ -332,12 +332,6 @@ class VexGraphEditor(QtWidgets.QWidget):
             "The timestamp moves on every edit; the version only when it is "
             "deliberately raised.")
 
-        self.help = QtWidgets.QLabel("")
-        self.help.setWordWrap(True)
-        self.help.setFont(theme.ui_font(8))
-        self.help.setContentsMargins(10, 6, 10, 6)
-        self.help.setMinimumHeight(0)
-        self.help.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
 
         self.issues = QtWidgets.QListWidget()
         self.issues.setFont(theme.ui_font(8))
@@ -370,9 +364,11 @@ class VexGraphEditor(QtWidgets.QWidget):
         code_layout.addWidget(
             self._folding_section("Problems", self.issues, "issues"))
         code_layout.addWidget(self.issues)
-        code_layout.addWidget(
-            self._folding_section("About the selected node", self.help, "help"))
-        code_layout.addWidget(self.help)
+        # "About the selected node" used to sit here: a smaller copy of the
+        # library's own description pane, which already follows the canvas
+        # selection and says strictly more (sockets, types, Houdini's help
+        # with examples). One pane, in the column that was already about
+        # describing nodes.
 
         assistant_side = QtWidgets.QWidget()
         assistant_layout = QtWidgets.QVBoxLayout(assistant_side)
@@ -392,7 +388,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         # taller than that does not scroll - it is simply cut off, taking the
         # box you type in with it. Panels docked short are normal, so the
         # editor has to survive one.
-        for shrinkable in (self.browser, self.code, self.issues, self.help,
+        for shrinkable in (self.browser, self.code, self.issues, self.learn,
                            self.assistant, code_side, assistant_side, right):
             shrinkable.setMinimumHeight(0)
             shrinkable.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
@@ -842,7 +838,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         self._show_message(f"Pasted {pasted} node{'s' if pasted != 1 else ''}."
                            if pasted else "There are no nodes on the clipboard.")
 
-    def _describe_in_library(self, node_type: str) -> None:
+    def _describe_in_library(self, node_type: str, status: str = "") -> None:
         """Point the library's detail pane at the node just selected.
 
         Deselecting deliberately leaves the last description on screen rather
@@ -851,7 +847,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         showing help for a node that is no longer highlighted.
         """
         if node_type:
-            self.browser.describe(node_type)
+            self.browser.describe(node_type, status)
 
     def _record_history(self) -> None:
         if not self._restoring:
@@ -881,7 +877,6 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.scene.graph_changed.connect(self._record_history)
         self.scene.graph_changed.connect(self._schedule)
         self.scene.message.connect(self._show_message)
-        self.scene.selection_described.connect(self.help.setText)
         self.scene.selection_typed.connect(self._describe_in_library)
         self.scene.selectionChanged.connect(self._sync_highlight)
         self.view.node_search_requested.connect(self._search_at)
@@ -1079,7 +1074,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.code.refresh_fonts()
         self.browser.refresh_fonts()
         self.assistant.refresh_fonts()
-        for label in (self.status, self.help, self.issues):
+        for label in (self.status, self.issues):
             label.setFont(theme.ui_font(8))
         self.view.viewport().update()
 

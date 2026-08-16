@@ -1745,3 +1745,31 @@ def test_every_exercise_says_how_to_see_it(student):
     for exercise in learn.BEGINNER:
         assert exercise.scene is not None and exercise.scene.describe
     assert "To see it:" in student.learn.body.toHtml()
+
+
+def test_one_description_pane_not_two(editor):
+    """"About the selected node" was a smaller copy of the library's own
+    pane, which already follows the canvas and says strictly more."""
+    assert not hasattr(editor, "help"), "the duplicate pane is gone"
+    assert "help" not in editor._section_state
+
+
+def test_selecting_a_node_fills_the_library_pane_with_its_problem(editor):
+    """The one thing the removed pane knew that the library did not: what is
+    wrong with THIS node. It moved rather than being lost."""
+    item = editor.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
+    item.node.params.pop("value", None)
+    editor.scene.connect_ports(
+        editor.scene.node_items["start"].ports[("exec", False)],
+        item.ports[("exec", True)])
+    editor._regenerate()
+    editor.scene.select_node(item.node.id)
+
+    detail = editor.browser.detail.toPlainText()
+    assert "Set Attribute" in detail
+    assert item.status_text and item.status_text[:20] in detail
+
+
+def test_the_course_starts_folded_in_a_clean_profile(editor):
+    """A fresh profile must not open the course by itself."""
+    assert editor._section_state["learn"]["folded"]
