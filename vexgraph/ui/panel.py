@@ -20,7 +20,7 @@ from ..codegen import generate
 from ..graph import ERROR, Graph, Issue
 from ..nodedefs import Registry, default_registry
 from ..vccmap import compile_check
-from . import theme
+from . import settings, theme
 from .assistant_panel import AssistantPanel
 from .browser import NodeBrowser
 from .canvas import GraphScene, GraphView
@@ -136,7 +136,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         self._section_toggles: dict[str, object] = {}
         # Which sections were folded away last time. Small enough to belong in
         # the platform's own settings rather than a file of our own.
-        self._settings = QtCore.QSettings("VEXgraph", "VEXgraph")
+        self._settings = settings.store()
 
         self.scene = GraphScene(self.graph, self)
         self.view = GraphView(self.scene)

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
-from . import layout, theme
+from . import layout, settings, theme
 
 _DEFAULTS = {
     "grid_spacing": theme.GRID_SPACING,
@@ -21,7 +21,7 @@ _DEFAULTS = {
 
 def load() -> None:
     """Apply stored preferences. Called once when the editor opens."""
-    store = QtCore.QSettings("VEXgraph", "VEXgraph")
+    store = settings.store()
     apply_values(
         int(store.value("prefs/grid_spacing", _DEFAULTS["grid_spacing"])),
         int(store.value("prefs/column_gap", _DEFAULTS["column_gap"])),
@@ -35,7 +35,7 @@ def apply_values(grid: int, column_gap: int, row_gap: int) -> None:
 
 
 def save(grid: int, column_gap: int, row_gap: int) -> None:
-    store = QtCore.QSettings("VEXgraph", "VEXgraph")
+    store = settings.store()
     store.setValue("prefs/grid_spacing", grid)
     store.setValue("prefs/column_gap", column_gap)
     store.setValue("prefs/row_gap", row_gap)

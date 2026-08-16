@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PySide6 import QtCore, QtWidgets
 
-from . import theme
+from . import settings, theme
 
 _DOCS = Path(__file__).resolve().parents[2] / "docs"
 _PAGES = (("English", "manual.md"), ("Español", "manual.es.md"))
@@ -45,7 +45,7 @@ class HelpDialog(QtWidgets.QDialog):
             tabs.addTab(view, label)
 
         # Remember which language was open last time.
-        settings = QtCore.QSettings("VEXgraph", "VEXgraph")
-        tabs.setCurrentIndex(int(settings.value("help/tab", 0)))
+        store = settings.store()
+        tabs.setCurrentIndex(int(store.value("help/tab", 0)))
         tabs.currentChanged.connect(
-            lambda index: settings.setValue("help/tab", index))
+            lambda index: store.setValue("help/tab", index))

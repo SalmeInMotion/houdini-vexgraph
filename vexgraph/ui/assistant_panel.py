@@ -27,7 +27,7 @@ from ..assistant.providers import (CLAUDE_MODELS, describe_local_model,
                                    local_model_advice)
 from ..graph import Graph
 from ..nodedefs import Registry
-from . import richtext, theme
+from . import richtext, settings, theme
 
 # How long a local model may sit in VRAM with nobody asking it anything. A
 # model left loaded is a couple of gigabytes taken from whatever you render
@@ -268,7 +268,7 @@ class AssistantPanel(QtWidgets.QWidget):
                                "provider and model are selected now).")
         self.repeat.setStyleSheet(
             "QPushButton { padding: 5px 8px; min-width: 22px; }")
-        self._settings = QtCore.QSettings("VEXgraph", "VEXgraph")
+        self._settings = settings.store()
         self._last_request = str(self._settings.value("assistant/last", ""))
         self.repeat.setEnabled(bool(self._last_request))
         self.repeat.clicked.connect(self._repeat_last)

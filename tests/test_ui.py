@@ -41,6 +41,25 @@ def registry():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_settings(tmp_path, monkeypatch):
+    """Never write into the user's real settings.
+
+    Fold states, Learn progress, the last assistant question and the canvas
+    preferences all live in QSettings - so without this a test run quietly
+    rearranged the actual app, and one test's click became the next run's
+    starting state. Per test, not per session: exercises and fold states
+    must not leak between tests either.
+    """
+    from vexgraph.ui import settings as settings_module
+
+    ini = str(tmp_path / "vexgraph.ini")
+    monkeypatch.setattr(
+        settings_module, "store",
+        lambda: QtCore.QSettings(ini, QtCore.QSettings.Format.IniFormat))
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _restore_ui_scale():
     """theme.UI_SCALE is a process-wide global; do not let one test's text-size
     change leak into whichever test happens to run next."""
@@ -1600,7 +1619,7 @@ def test_the_first_exercise_is_solvable_on_the_real_canvas(student):
     """The student's actual journey: empty canvas fails with the first
     lesson, building the graph passes, and the next exercise unlocks."""
     student.learn.check()
-    assert "Set Attribute" in student.learn.verdict.text()
+    assert "set attribute" in student.learn.verdict.text().lower()
 
     item = student.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
     item.node.params.update(attrib="Cd", type="vector", value="{1, 0, 0}")
@@ -1637,3 +1656,36 @@ def test_the_learn_button_unfolds_the_course(editor):
     assert state["folded"], "the course starts folded - it is opt-in"
     editor.learn_button.click()
     assert not state["folded"]
+
+
+def test_the_exercise_lists_the_words_to_search_for(student):
+    """A beginner cannot be told 'add a node' with 1360 to choose from."""
+    html = student.learn.body.toHtml()
+    assert "Nodes for this exercise" in html
+    assert "set attribute" in html
+
+
+def test_navigation_never_traps_the_student(student):
+    """Locking the way forward meant a correct-but-unrecognised graph left
+    no way out. Browsing ahead is not cheating."""
+    assert student.learn.next_button.isEnabled()
+    assert not student.learn.back_button.isEnabled()      # first exercise
+    student.learn._go(+1)
+    assert student.learn.back_button.isEnabled()
+    assert student.learn.exercise.key == "flatten"
+
+
+def test_a_make_vector_solution_counts_as_solved(student):
+    """Ivan's stumble: building the colour with Make Vector emits
+    set(1, 0, 0) where a typed value emits {1, 0, 0}. VEX cannot tell them
+    apart and neither may the course."""
+    scene = student.scene
+    mk = scene.add_node("make_vector", QtCore.QPointF(0, 0))
+    mk.node.params.update(x="1", y="0", z="0")
+    st = scene.add_node("attrib_set", QtCore.QPointF(300, 0))
+    st.node.params.update(attrib="Cd", type="vector")
+    student.graph.connect(mk.node.id, "result", st.node.id, "value")
+    scene.connect_ports(scene.node_items["start"].ports[("exec", False)],
+                        st.ports[("exec", True)])
+    student.learn.check()
+    assert "Solved" in student.learn.verdict.text()

@@ -13,7 +13,7 @@ import json
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .. import learn
-from . import theme
+from . import settings, theme
 
 
 class LearnPanel(QtWidgets.QWidget):
@@ -26,7 +26,7 @@ class LearnPanel(QtWidgets.QWidget):
         self._course = learn.BEGINNER
         self._index = 0
         self._hints_shown = 0
-        self._settings = QtCore.QSettings("VEXgraph", "VEXgraph")
+        self._settings = settings.store()
         self.progress = self._load_progress()
 
         self.header = QtWidgets.QLabel()
@@ -115,9 +115,18 @@ class LearnPanel(QtWidgets.QWidget):
         self.header.setText(
             f"  Beginner {self._index + 1}/{len(self._course)}   {dots}")
         parts = [f"<h3>{exercise.title}{' ✓' if done else ''}</h3>",
-                 f"<p><b>{exercise.goal}</b></p>",
-                 "<p>" + exercise.steps.replace("\n\n", "</p><p>")
-                 .replace("\n", "<br>") + "</p>"]
+                 f"<p><b>{exercise.goal}</b></p>"]
+        if exercise.nodes:
+            # Naming the search word is the difference between "add a node"
+            # and a beginner staring at 1360 of them.
+            rows = "".join(
+                f"<li><b>Tab → “{term}”</b> — {purpose}</li>"
+                for term, _type, purpose in exercise.nodes)
+            parts.append(
+                "<p style='color:#8fa4b0'>Nodes for this exercise:</p>"
+                f"<ul style='color:#a8b4bc'>{rows}</ul>")
+        parts.append("<p>" + exercise.steps.replace("\n\n", "</p><p>")
+                     .replace("\n", "<br>") + "</p>")
         for shown in range(self._hints_shown):
             if shown < len(exercise.hints):
                 parts.append(f"<p style='color:#b0a48f'>💡 "
@@ -128,9 +137,13 @@ class LearnPanel(QtWidgets.QWidget):
             parts.append(f"<p style='color:#8a8a8a'>Go deeper: {links}</p>")
         self.body.setHtml("".join(parts))
         self.verdict.setText("")
+        # Always walkable. Locking the way forward until an exercise is
+        # solved meant a student whose CORRECT graph was not recognised had
+        # no way out at all - and browsing ahead is not cheating anyway.
         self.back_button.setEnabled(self._index > 0)
-        self.next_button.setEnabled(
-            done and self._index < len(self._course) - 1)
+        self.next_button.setEnabled(self._index < len(self._course) - 1)
+        self.back_button.setToolTip("Previous exercise")
+        self.next_button.setToolTip("Next exercise")
         self.hint_button.setEnabled(self._hints_shown < len(exercise.hints))
 
     def _go(self, step: int) -> None:
