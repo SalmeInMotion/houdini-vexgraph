@@ -125,6 +125,22 @@ class NodeBrowser(QtWidgets.QWidget):
         self.search.textChanged.connect(self.tree.filter)
         self.tree.populate()
 
+    def reveal(self, node_type: str) -> bool:
+        """Open the library at this node's home, neighbours in view.
+
+        Generated nodes are hidden from the plain browse tree by design, so
+        when browsing cannot show one, its search term is typed into the box
+        instead - which finds it AND shows how to find it again.
+        """
+        self.search.clear()                       # repopulates the browse tree
+        if self.tree.select_type(node_type):
+            return True
+        definition = self.registry.get(node_type)
+        if definition is None:
+            return False
+        self.search.setText(definition.vex_function or definition.label)
+        return self.tree.select_type(node_type)
+
     def refresh_fonts(self) -> None:
         query = self.search.text()
         self.search.setFont(theme.ui_font(9))
@@ -326,6 +342,28 @@ class NodeTree(QtWidgets.QTreeWidget):
 
     def filter(self, query: str) -> None:
         self.populate(query)
+
+    def select_type(self, node_type: str) -> bool:
+        """Land the selection on this node type, if the tree can see it."""
+        item = self._find(node_type)
+        if item is None:
+            return False
+        parent = item.parent()
+        if parent is not None:
+            parent.setExpanded(True)
+        self.setCurrentItem(item)
+        self.scrollToItem(item,
+                          QtWidgets.QAbstractItemView.ScrollHint.PositionAtCenter)
+        return True
+
+    def _find(self, node_type: str) -> QtWidgets.QTreeWidgetItem | None:
+        for index in range(self.topLevelItemCount()):
+            category = self.topLevelItem(index)
+            for row in range(category.childCount()):
+                child = category.child(row)
+                if child.data(0, QtCore.Qt.ItemDataRole.UserRole) == node_type:
+                    return child
+        return None
 
     def contextMenuEvent(self, event) -> None:
         item = self.itemAt(event.pos())

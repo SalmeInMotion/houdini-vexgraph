@@ -681,6 +681,7 @@ class GraphView(QtWidgets.QGraphicsView):
     function_opened = QtCore.Signal(str)         # user-function name
     collapse_requested = QtCore.Signal()         # selection -> function
     save_function_requested = QtCore.Signal(str)  # fn name -> user library
+    library_reveal_requested = QtCore.Signal(str)  # node type -> browser
 
     def __init__(self, scene: GraphScene, parent=None):
         super().__init__(scene, parent)
@@ -880,6 +881,11 @@ class GraphView(QtWidgets.QGraphicsView):
                             "function; what fed them becomes its inputs.")
         collapse.setEnabled(bool(selected))
         collapse.setData("collapse")
+        if len(selected) == 1:
+            reveal = menu.addAction("Show in node library")
+            reveal.setToolTip("Open this node's home in the library - its "
+                              "neighbours often do related jobs.")
+            reveal.setData("reveal")
         if (len(selected) == 1
                 and selected[0].node.type.startswith("fn_")):
             name = selected[0].node.type[3:]
@@ -909,6 +915,11 @@ class GraphView(QtWidgets.QGraphicsView):
                         if isinstance(i, NodeItem)]
             if selected:
                 self.save_function_requested.emit(selected[0].node.type[3:])
+        elif chosen.data() == "reveal":
+            selected = [i for i in self.scene().selectedItems()
+                        if isinstance(i, NodeItem)]
+            if selected:
+                self.library_reveal_requested.emit(selected[0].node.type)
         elif chosen.data() == "add":
             self.request_node_search(
                 self.mapToScene(self.mapFromGlobal(screen_pos)))

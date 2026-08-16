@@ -1493,3 +1493,54 @@ def test_the_code_pane_starts_folded_only_inside_houdini(monkeypatch):
     monkeypatch.setitem(sys.modules, "hou", object())
     assert _default_folded("code")
     assert not _default_folded("issues"), "only the code pane starts folded"
+
+
+# ----------------------------------------------------- feedback round three
+
+def test_show_in_library_reveals_curated_and_generated_nodes(editor):
+    """Curated nodes sit in the browse tree; generated ones are reached by
+    typing their search into the box - which also teaches the search."""
+    assert editor.browser.reveal("attrib_get")
+    item = editor.browser.tree.currentItem()
+    assert item.data(0, QtCore.Qt.ItemDataRole.UserRole) == "attrib_get"
+
+    assert editor.browser.reveal("vex_getbbox_center")
+    item = editor.browser.tree.currentItem()
+    assert item.data(0, QtCore.Qt.ItemDataRole.UserRole) == "vex_getbbox_center"
+    assert editor.browser.search.text()          # the search box shows how
+
+
+def test_the_reply_schema_is_acceptable_to_claude():
+    """Claude's structured outputs rejects `additionalProperties` carrying a
+    schema; every object in ours must pin it to false."""
+    from vexgraph.assistant.agent import REPLY_SCHEMA
+
+    def walk(schema):
+        if isinstance(schema, dict):
+            if schema.get("type") == "object":
+                assert schema.get("additionalProperties") is False, schema
+            for value in schema.values():
+                walk(value)
+        elif isinstance(schema, list):
+            for value in schema:
+                walk(value)
+
+    walk(REPLY_SCHEMA)
+
+
+def test_params_are_read_from_either_shape():
+    from vexgraph.assistant.agent import _param_pairs
+    assert _param_pairs({"attrib": "Cd"}) == [("attrib", "Cd")]
+    assert _param_pairs([{"name": "attrib", "value": "Cd"}]) == [
+        ("attrib", "Cd")]
+    assert _param_pairs(None) == []
+
+
+def test_repeat_asks_the_last_question_again(editor, monkeypatch):
+    asked = []
+    monkeypatch.setattr(editor.assistant, "ask",
+                        lambda: asked.append(editor.assistant.input.toPlainText()))
+    editor.assistant._last_request = "make the points dance"
+    editor.assistant.repeat.setEnabled(True)
+    editor.assistant._repeat_last()
+    assert asked == ["make the points dance"]

@@ -848,6 +848,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.view.function_opened.connect(self.enter_function)
         self.view.collapse_requested.connect(self._collapse_dialog)
         self.view.save_function_requested.connect(self._save_function)
+        self.view.library_reveal_requested.connect(self.browser.reveal)
         self.code.line_clicked.connect(self._select_from_code)
         self.code.edited.connect(self._code_edited)
         self.code.commit_requested.connect(self.build_from_code)

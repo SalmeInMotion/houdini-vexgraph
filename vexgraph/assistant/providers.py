@@ -27,7 +27,10 @@ from typing import Protocol
 # 127.0.0.1 rather than localhost: on Windows localhost resolves to IPv6 first,
 # Ollama listens on IPv4 only, and every request pays a ~2 s connect timeout.
 OLLAMA_URL = "http://127.0.0.1:11434"
-DEFAULT_LOCAL_MODEL = "qwen3:32b"
+# qwen3.6 replaced qwen3:32b (removed 2026-08-16): faster (203 tok/s at a
+# num_ctx that fits VRAM), better, and the 32b's earlier "did not finish in 25
+# minutes" was VRAM paging at an oversized context, not model capability.
+DEFAULT_LOCAL_MODEL = "qwen3.6:latest"
 
 # Opus 5 is the right tier for this: choosing correctly from a 1300-entry
 # catalogue on a vague request is exactly where the difference shows.

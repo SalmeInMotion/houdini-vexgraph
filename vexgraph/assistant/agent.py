@@ -44,8 +44,9 @@ Rules:
 - A `scope` node runs its body through its body pin, e.g. out "then" or "body".
 - Nodes of kind `pure` are NOT in the exec sequence. They are wired by their
   values only, and are computed wherever they are needed.
-- An input either gets a data link or a value in `params`. A value is written
-  exactly as VEX would: 0.5, {1, 0, 0}, "myname".
+- An input either gets a data link or a value in `params`, a list of pairs:
+  "params": [{"name": "attrib", "value": "Cd"}]. A value is written exactly
+  as VEX would: 0.5, {1, 0, 0}, "myname".
 - An output marked "only inside <body>" may only be used by nodes that run
   inside that body.
 - Prefer the task-level nodes over raw VEX functions. Reach for a raw VEX
@@ -142,7 +143,21 @@ REPLY_SCHEMA = {
                 "properties": {
                     "id": {"type": "string"},
                     "type": {"type": "string"},
-                    "params": {"type": "object", "additionalProperties": {"type": "string"}},
+                    # A list of pairs, not an open map: Claude's structured
+                    # outputs rejects `additionalProperties` carrying a schema
+                    # ("must be false"), and every provider can emit a list.
+                    "params": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "value": {"type": "string"},
+                            },
+                            "required": ["name", "value"],
+                            "additionalProperties": False,
+                        },
+                    },
                 },
                 "required": ["id", "type"],
                 "additionalProperties": False,
@@ -167,6 +182,21 @@ REPLY_SCHEMA = {
     "required": ["notes", "run_over", "nodes", "links"],
     "additionalProperties": False,
 }
+
+
+def _param_pairs(raw) -> list[tuple[str, str]]:
+    """Node params from a reply, whichever shape the model chose.
+
+    The schema asks for a list of {name, value} pairs (an open map is not
+    expressible under Claude's structured outputs), but local models often
+    reply with the plain object anyway - and both mean the same thing.
+    """
+    if isinstance(raw, dict):
+        return [(str(k), str(v)) for k, v in raw.items()]
+    if isinstance(raw, list):
+        return [(str(p.get("name", "")), str(p.get("value", "")))
+                for p in raw if isinstance(p, dict) and p.get("name")]
+    return []
 
 
 @dataclass
@@ -256,7 +286,7 @@ class GraphBuilder:
         graph.nodes[node_id] = node
 
         problems: list[str] = []
-        for key, value in (entry.get("params") or {}).items():
+        for key, value in _param_pairs(entry.get("params")):
             problems += self._check_param(graph, node, key, str(value))
         return problems
 

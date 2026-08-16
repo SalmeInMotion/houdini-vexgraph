@@ -261,6 +261,17 @@ class AssistantPanel(QtWidgets.QWidget):
         self.input.installEventFilter(self)
 
         self.send = QtWidgets.QPushButton("Ask")
+        # For the "switch model, try the exact same thing" moment - after an
+        # error, or just to compare answers - without retyping the question.
+        self.repeat = QtWidgets.QPushButton("↻")
+        self.repeat.setToolTip("Repeat the last question (with whatever "
+                               "provider and model are selected now).")
+        self.repeat.setStyleSheet(
+            "QPushButton { padding: 5px 8px; min-width: 22px; }")
+        self._settings = QtCore.QSettings("VEXgraph", "VEXgraph")
+        self._last_request = str(self._settings.value("assistant/last", ""))
+        self.repeat.setEnabled(bool(self._last_request))
+        self.repeat.clicked.connect(self._repeat_last)
         self.stop = QtWidgets.QPushButton("Stop")
         self.stop.setEnabled(False)
         self.keep = QtWidgets.QPushButton("Keep This Graph")
@@ -314,6 +325,7 @@ class AssistantPanel(QtWidgets.QWidget):
         buttons = QtWidgets.QHBoxLayout()
         buttons.setContentsMargins(8, 0, 8, 6)
         buttons.addWidget(self.send)
+        buttons.addWidget(self.repeat)
         buttons.addWidget(self.stop)
         buttons.addStretch(1)
         buttons.addWidget(self.discard)
@@ -392,11 +404,16 @@ class AssistantPanel(QtWidgets.QWidget):
             self.model.addItem("No local models found", "")
             self.model.setToolTip(
                 "Ollama is not running, or has no models pulled.\n"
-                "Install one with:  ollama pull qwen3:32b")
+                "Install one with:  ollama pull qwen3.6")
 
     def refresh_fonts(self) -> None:
         self.input.setFont(theme.ui_font(9))
         self.log.setFont(theme.ui_font(8))
+
+    def _repeat_last(self) -> None:
+        if self._last_request:
+            self.input.setPlainText(self._last_request)
+            self.ask()
 
     def ask(self) -> None:
         text = self.input.toPlainText().strip()
@@ -410,8 +427,11 @@ class AssistantPanel(QtWidgets.QWidget):
         has_graph = (self._current_graph is not None
                      and len(self._current_graph.nodes) > 1)
         # Kept so a request can be sent again after supplying a key, without
-        # making the user type it a second time.
+        # making the user type it a second time - and across sessions, so the
+        # ↻ button still remembers after a restart.
         self._last_request = text
+        self._settings.setValue("assistant/last", text)
+        self.repeat.setEnabled(True)
         if self.provider.currentText() == "Local":
             # Remembered so the idle timer knows what to unload, and so a model
             # swapped away from is still the one released.
