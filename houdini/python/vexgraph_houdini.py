@@ -50,13 +50,16 @@ OPEN_PARM = "vexgraph_open"
 OPEN_CALLBACK = (
     'import hou\n'
     'try:\n'
-    '    import vexgraph_houdini\n'
+    # Through the reloader, like the shelf: pressing the button on the node
+    # then picks up edits to VEXgraph's source, instead of quietly running
+    # whatever was loaded when Houdini started.
+    '    import vexgraph_reload\n'
     'except ImportError:\n'
     '    hou.ui.displayMessage(\n'
     '        "VEXgraph is not on this Houdini\'s Python path.\\n"\n'
     '        "Check that its package file is installed.")\n'
     'else:\n'
-    '    vexgraph_houdini.open_window(kwargs["node"])\n'
+    '    vexgraph_reload.fresh().open_window(kwargs["node"])\n'
 )
 
 
@@ -73,8 +76,18 @@ def add_open_button(node) -> bool:
 
     Returns whether it added one; already having the button is not a failure.
     """
-    if node is None or node.parm(OPEN_PARM) is not None:
+    if node is None:
         return False
+    existing = node.parm(OPEN_PARM)
+    if existing is not None:
+        # A wrangle saved before the callback changed carries the old script
+        # inside the .hip, so it would keep importing the stale module for
+        # ever. Rewriting it is what lets an old scene pick up the fix.
+        if existing.parmTemplate().scriptCallback() == OPEN_CALLBACK:
+            return False
+        group = node.parmTemplateGroup()
+        group.remove(OPEN_PARM)
+        node.setParmTemplateGroup(group)
 
     template = hou.ButtonParmTemplate(
         OPEN_PARM, "Edit in VEXgraph",

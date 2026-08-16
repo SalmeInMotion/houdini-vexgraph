@@ -17,9 +17,35 @@ nothing lives there either.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 PACKAGE = "vexgraph"
 ENTRY = "vexgraph_houdini"
+
+ROOT = Path(__file__).resolve().parents[2]
+# What counts as "the source changed": the package, the node library, and the
+# Houdini glue. Cheap to stat - a few dozen files - and it is what lets every
+# door reload without every door paying for it.
+WATCHED = ("vexgraph/**/*.py", "nodes/**/*.json", "houdini/python/*.py")
+
+_loaded_stamp: float | None = None
+
+
+def source_stamp() -> float:
+    """The newest modification time across VEXgraph's own files."""
+    newest = 0.0
+    for pattern in WATCHED:
+        for path in ROOT.glob(pattern):
+            try:
+                newest = max(newest, path.stat().st_mtime)
+            except OSError:
+                continue
+    return newest
+
+
+def is_stale() -> bool:
+    """Whether the files on disk are newer than what is loaded in memory."""
+    return _loaded_stamp is None or source_stamp() > _loaded_stamp
 
 
 def stale_modules() -> list[str]:
@@ -52,9 +78,20 @@ def purge() -> list[str]:
     return dropped
 
 
-def fresh():
-    """The Houdini entry point, re-read from disk. Use instead of importing."""
-    purge()
+def fresh(force: bool = False):
+    """The Houdini entry point, re-read from disk if the source moved on.
+
+    Every way into the editor comes through here - the shelf, the panel, and
+    the button on the wrangle - so an edit is picked up whichever one you
+    reach for. Only when something actually changed, though: purging closes
+    the open window, and doing that on every press would be its own small
+    punishment.
+    """
+    global _loaded_stamp
+
+    if force or is_stale():
+        purge()
+        _loaded_stamp = source_stamp()
     import vexgraph_houdini                                    # noqa: PLC0415
 
     return vexgraph_houdini

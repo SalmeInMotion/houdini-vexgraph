@@ -3,11 +3,14 @@
   <interface name="vexgraph" label="VEXgraph" icon="SOP_attribwrangle"
              showNetworkNavigationBar="false" help_url="">
     <script><![CDATA[
-import vexgraph_houdini
+import vexgraph_reload
 
 
 def createInterface():
-    return vexgraph_houdini.createInterface()
+    # Through the reloader rather than importing directly, like the shelf and
+    # the button on the wrangle: a docked panel reopened after an edit used to
+    # rebuild itself from the code loaded when Houdini started.
+    return vexgraph_reload.fresh().createInterface()
 ]]></script>
     <includeInToolbarMenu menu_position="300" create_separator="false"/>
   </interface>

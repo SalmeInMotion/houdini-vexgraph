@@ -285,6 +285,53 @@ def test_the_falloff_scene_copies_onto_the_wrangled_points(geo):
     assert len(copy.geometry().points()) > len(wrangle.geometry().points())
 
 
+
+def test_every_door_picks_up_an_edit_without_restarting(geo):
+    """The shelf reloaded; the panel and the node's button imported directly
+    and quietly ran whatever was loaded when Houdini started. Now all three
+    come through the reloader - and only pay for it when something changed.
+    """
+    import time
+
+    import vexgraph_reload as reloader
+
+    reloader.fresh(force=True)
+    assert not reloader.is_stale(), "just loaded, nothing to pick up"
+
+    (ROOT / "vexgraph" / "learn.py").touch()
+    time.sleep(0.02)
+    assert reloader.is_stale(), "an edited file must be noticed"
+
+    dropped = reloader.purge()
+    assert any(name.startswith("vexgraph") for name in dropped)
+    reloader.fresh()
+    assert not reloader.is_stale()
+
+    # Both entry points reach the module through the reloader, not by import.
+    panel = (ROOT / "houdini" / "python_panels" / "vexgraph.pypanel").read_text(
+        encoding="utf8")
+    assert "vexgraph_reload.fresh()" in panel
+    assert "vexgraph_reload" in vh.OPEN_CALLBACK
+
+
+def test_an_old_wrangles_button_is_upgraded(geo):
+    """The callback lives in the .hip, so a scene saved before it changed
+    would keep running the stale one for ever."""
+    node = geo.createNode("attribwrangle", "old_button")
+    template = hou.ButtonParmTemplate(
+        vh.OPEN_PARM, "Edit in VEXgraph",
+        script_callback="import vexgraph_houdini",
+        script_callback_language=hou.scriptLanguage.Python)
+    group = node.parmTemplateGroup()
+    group.insertBefore(group.entries()[0], template)
+    node.setParmTemplateGroup(group)
+
+    assert vh.add_open_button(node), "an out-of-date button must be replaced"
+    current = node.parm(vh.OPEN_PARM).parmTemplate().scriptCallback()
+    assert "vexgraph_reload" in current
+    assert not vh.add_open_button(node), "a current button is left alone"
+
+
 def _run() -> int:
     checks = [(n, f) for n, f in sorted(globals().items())
               if n.startswith("test_") and callable(f)]
