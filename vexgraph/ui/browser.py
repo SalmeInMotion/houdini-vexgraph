@@ -37,7 +37,10 @@ class NodeBrowser(QtWidgets.QWidget):
         self.registry = registry
 
         self.search = QtWidgets.QLineEdit()
-        self.search.setPlaceholderText("Search all 1300 nodes...")
+        # A live count, not a boast that goes stale: the registry is the
+        # single source of how many nodes this build actually ships.
+        self.search.setPlaceholderText(
+            f"Search all {sum(1 for _ in registry)} nodes...")
         self.search.setClearButtonEnabled(True)
         self.search.setFont(theme.ui_font(9))
 

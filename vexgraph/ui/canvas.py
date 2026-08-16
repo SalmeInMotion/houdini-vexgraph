@@ -19,7 +19,8 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ..graph import EXEC_PIN, Graph, Node
 from . import theme
 from .browser import NODE_MIME
-from .items import DragLink, LinkItem, NodeItem, PortItem, RowItem, retire
+from .items import (BoxItem, DragLink, LinkItem, NodeItem, PortItem, RowItem,
+                    retire)
 from .layout import arrange, needs_arranging
 
 # How far the mouse may travel between press and release and still count as a
@@ -67,6 +68,10 @@ class GraphScene(QtWidgets.QGraphicsScene):
     # -------------------------------------------------------------- building
 
     def reload(self) -> None:
+        # clear() destroys the row under any open editor without telling it;
+        # the dangling proxy would leave `is_editing` stuck and the keyboard
+        # dead. Close it first, always.
+        self._close_editor()
         self.clear()
         self.node_items.clear()
         self.link_items.clear()
@@ -74,11 +79,21 @@ class GraphScene(QtWidgets.QGraphicsScene):
             item = NodeItem(self.graph, node)
             self.addItem(item)
             self.node_items[node.id] = item
+        for box in self.graph.boxes:
+            self.addItem(BoxItem(self.graph, box))
         # A graph built in code, or written by the assistant, has every node at
         # the origin. Showing that pile would look like a broken tool.
         if needs_arranging(self.graph):
             arrange(self.node_items, self.graph)
         self.rebuild_links()
+
+    def add_box(self, rect: QtCore.QRectF, title: str = "") -> BoxItem:
+        box = self.graph.add_box(title, (rect.x(), rect.y(),
+                                         rect.width(), rect.height()))
+        item = BoxItem(self.graph, box)
+        self.addItem(item)
+        self.graph_changed.emit()
+        return item
 
     def tidy(self) -> None:
         arrange(self.node_items, self.graph)
@@ -210,6 +225,11 @@ class GraphScene(QtWidgets.QGraphicsScene):
         return len(created)
 
     def delete_selected(self) -> None:
+        # Deleting the node whose row is being edited left the editor proxy
+        # alive and `is_editing` stuck - which silently killed Delete and
+        # Ctrl+Z for the rest of the session, because the key filter kept
+        # routing them to a text field that no longer existed.
+        self._close_editor()
         removed = False
         detached = []
         for item in list(self.selectedItems()):
@@ -221,6 +241,12 @@ class GraphScene(QtWidgets.QGraphicsScene):
                 removed = True
             elif isinstance(item, LinkItem):
                 self._remove_link_item(item)
+                removed = True
+            elif isinstance(item, BoxItem):
+                # The box goes; its nodes stay. Grouping is not ownership.
+                self.graph.remove_box(item.box.id)
+                self.removeItem(item)
+                detached.append(item)
                 removed = True
         retire(detached)            # see items.retire
         if removed:
@@ -272,6 +298,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
 
     def _rebuild_rows(self) -> None:
         """Inputs show or hide their value row depending on what is wired."""
+        self._close_editor()        # its row is about to be torn down
         for item in self.node_items.values():
             item.rebuild()
         self.rebuild_links()
@@ -667,7 +694,10 @@ class GraphView(QtWidgets.QGraphicsView):
             QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(
             QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setSceneRect(-8000, -8000, 16000, 16000)
+        # Effectively infinite. The scene rect is what the view lets you pan
+        # across, and a large imported graph walked straight past the old
+        # ±8000 edge - nodes existed that could never be scrolled to.
+        self.setSceneRect(-200000, -200000, 400000, 400000)
         # A wire armed by a click has to follow the cursor while no button is
         # down, and move events only arrive with the button up if the viewport
         # is tracking.
@@ -676,6 +706,8 @@ class GraphView(QtWidgets.QGraphicsView):
         self._panning = False
         self._pan_moved = False
         self._pan_origin = QtCore.QPoint()
+        self._box_rubber: QtWidgets.QGraphicsRectItem | None = None
+        self._box_origin = QtCore.QPointF()
 
     def request_node_search(self, scene_pos: QtCore.QPointF,
                             port=None) -> None:
@@ -738,6 +770,21 @@ class GraphView(QtWidgets.QGraphicsView):
                                         QtCore.Qt.MouseButton.RightButton)
         space_pan = (event.button() == QtCore.Qt.MouseButton.LeftButton
                      and event.modifiers() & QtCore.Qt.KeyboardModifier.AltModifier)
+
+        # Shift+drag on empty canvas draws a network box around whatever it
+        # ends up hugging - the fastest way to write "these belong together".
+        if (event.button() == QtCore.Qt.MouseButton.LeftButton
+                and event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier
+                and self.itemAt(event.position().toPoint()) is None):
+            self._box_origin = self.mapToScene(event.position().toPoint())
+            self._box_rubber = QtWidgets.QGraphicsRectItem()
+            pen = QtGui.QPen(theme.NODE_OUTLINE_SELECTED, 1,
+                             QtCore.Qt.PenStyle.DashLine)
+            self._box_rubber.setPen(pen)
+            self._box_rubber.setZValue(30)
+            self.scene().addItem(self._box_rubber)
+            event.accept()
+            return
         # A wire in progress outranks panning: right-click means "forget it".
         # The view has to check, because it claims the right button before the
         # scene ever sees the press.
@@ -758,6 +805,12 @@ class GraphView(QtWidgets.QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+        if self._box_rubber is not None:
+            here = self.mapToScene(event.position().toPoint())
+            self._box_rubber.setRect(
+                QtCore.QRectF(self._box_origin, here).normalized())
+            event.accept()
+            return
         if self._panning:
             pos = event.position().toPoint()
             delta = pos - self._pan_origin
@@ -773,6 +826,21 @@ class GraphView(QtWidgets.QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
+        if self._box_rubber is not None:
+            rect = self._box_rubber.rect()
+            self.scene().removeItem(self._box_rubber)
+            self._box_rubber = None
+            if rect.width() > 40 and rect.height() > 30:
+                item = self.scene().add_box(rect)
+                # Name it right away - the box exists to say something.
+                title, accepted = QtWidgets.QInputDialog.getText(
+                    self, "Name this group", "What do these nodes do?")
+                if accepted and title.strip():
+                    item.box.title = title.strip()
+                    item.update()
+                    self.scene().graph_changed.emit()
+            event.accept()
+            return
         if self._panning and event.button() in (
                 QtCore.Qt.MouseButton.MiddleButton, QtCore.Qt.MouseButton.RightButton,
                 QtCore.Qt.MouseButton.LeftButton):
@@ -898,6 +966,12 @@ class GraphView(QtWidgets.QGraphicsView):
         # field. Claiming them here is why Backspace deleted the whole node
         # instead of a character, and why typing an "f" reframed the view.
         if self.scene().is_editing:
+            # Escape is the one exception: a QLineEdit ignores it, and it
+            # must close the editor rather than leak through to Houdini.
+            if key == QtCore.Qt.Key.Key_Escape:
+                self.scene()._close_editor()
+                event.accept()
+                return
             super().keyPressEvent(event)
             return
         if key == QtCore.Qt.Key.Key_Escape:

@@ -156,20 +156,20 @@ class VexGraphPanel(QtWidgets.QWidget):
         self.editor = VexGraphEditor(self.registry, parent=self)
         self.editor.applied.connect(self._apply)
 
-        self.node_label = QtWidgets.QLabel("No wrangle attached")
-        self.node_label.setContentsMargins(10, 0, 10, 0)
-        attach = QtWidgets.QPushButton("Attach to Selected Wrangle")
-        attach.clicked.connect(self.attach_to_selection)
-        new_wrangle = QtWidgets.QPushButton("New Wrangle")
-        new_wrangle.setToolTip(
-            "Create an Attribute Wrangle under the current network and attach")
-        new_wrangle.clicked.connect(self.create_wrangle)
-
+        # One control instead of three. Opening from a wrangle's "Edit in
+        # VEXgraph" button already says which wrangle you mean, so attaching
+        # is implicit; this button just SHOWS the attachment, and clicking it
+        # re-attaches to whatever wrangle is selected now. "New Wrangle" went
+        # with it - you make a wrangle the Houdini way and press its button.
+        self.node_label = QtWidgets.QPushButton("Attach to a wrangle…")
+        self.node_label.setFlat(True)
+        self.node_label.setToolTip(
+            "The wrangle this graph is editing. Click to attach to the "
+            "currently selected wrangle instead.")
+        self.node_label.clicked.connect(self.attach_to_selection)
         # Into the editor's own toolbar rather than a strip above it: two rows
         # of chrome is enough to push the bottom of the panel out of sight when
         # it is docked in a short pane.
-        self.editor.host_slot.addWidget(attach)
-        self.editor.host_slot.addWidget(new_wrangle)
         self.editor.host_slot.addWidget(self.node_label)
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -189,7 +189,7 @@ class VexGraphPanel(QtWidgets.QWidget):
         if not selected:
             if not quiet:
                 hou.ui.displayMessage(
-                    "Select an Attribute Wrangle first, or press New Wrangle.")
+                    "Select an Attribute Wrangle first.")
             return
         self.attach(selected[0])
 

@@ -404,6 +404,139 @@ class CodeRow(RowItem):
 
 # --------------------------------------------------------------------- nodes
 
+class BoxItem(QtWidgets.QGraphicsItem):
+    """A titled network box. Drag it and the nodes inside travel with it.
+
+    Membership is geometric and captured at the moment the drag starts, the
+    way Houdini's boxes behave: whatever NodeItems sit inside the rectangle
+    right then are the passengers. Double-click the title to rename; drag
+    the bottom-right corner to resize.
+    """
+
+    TITLE_H = 26
+    HANDLE = 14
+
+    def __init__(self, graph: Graph, box):
+        super().__init__()
+        self.graph = graph
+        self.box = box
+        self._passengers: list[QtWidgets.QGraphicsItem] = []
+        self._resizing = False
+        self.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
+        self.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
+        self.setFlag(
+            QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
+        self.setZValue(-10)                     # always behind the nodes
+        self.setPos(box.rect[0], box.rect[1])
+        x, y, w, h = box.rect
+        self._size = QtCore.QSizeF(w, h)
+        self.setAcceptHoverEvents(True)
+
+    def boundingRect(self) -> QtCore.QRectF:
+        return QtCore.QRectF(0, 0, self._size.width(), self._size.height())
+
+    def scene_rect(self) -> QtCore.QRectF:
+        return QtCore.QRectF(self.pos(), self._size)
+
+    def paint(self, painter: QtGui.QPainter, option, widget=None) -> None:
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        rect = self.boundingRect()
+        body = QtGui.QColor(theme.NODE_BG)
+        body.setAlpha(70)
+        outline = QtGui.QColor(theme.NODE_OUTLINE_SELECTED if self.isSelected()
+                               else theme.NODE_OUTLINE)
+        painter.setPen(QtGui.QPen(outline, 1.4))
+        painter.setBrush(body)
+        painter.drawRoundedRect(rect, 6, 6)
+
+        title_rect = QtCore.QRectF(0, 0, rect.width(), self.TITLE_H)
+        band = QtGui.QColor(outline)
+        band.setAlpha(50)
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(band)
+        painter.drawRoundedRect(title_rect, 6, 6)
+        painter.setPen(theme.PANEL_TEXT)
+        painter.setFont(theme.ui_font(9))
+        painter.drawText(title_rect.adjusted(10, 0, -10, 0),
+                         int(QtCore.Qt.AlignmentFlag.AlignLeft
+                             | QtCore.Qt.AlignmentFlag.AlignVCenter),
+                         _elide(self.box.title or "…", theme.ui_font(9),
+                                title_rect.width() - 20))
+
+        # The resize handle, quietly in the corner.
+        corner = rect.bottomRight()
+        painter.setPen(QtGui.QPen(outline, 1))
+        for offset in (4, 8, 12):
+            painter.drawLine(corner + QtCore.QPointF(-offset, -2),
+                             corner + QtCore.QPointF(-2, -offset))
+
+    def _on_handle(self, pos: QtCore.QPointF) -> bool:
+        rect = self.boundingRect()
+        return (pos.x() > rect.width() - self.HANDLE
+                and pos.y() > rect.height() - self.HANDLE)
+
+    def hoverMoveEvent(self, event) -> None:
+        self.setCursor(QtCore.Qt.CursorShape.SizeFDiagCursor
+                       if self._on_handle(event.pos())
+                       else QtCore.Qt.CursorShape.ArrowCursor)
+
+    def mousePressEvent(self, event) -> None:
+        if self._on_handle(event.pos()):
+            self._resizing = True
+            event.accept()
+            return
+        # Capture the passengers now: whoever is inside when the drag begins.
+        rect = self.scene_rect()
+        self._passengers = [
+            item for item in (self.scene().items(rect) if self.scene() else [])
+            if isinstance(item, NodeItem)
+            and rect.contains(item.sceneBoundingRect().center())]
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._resizing:
+            self.prepareGeometryChange()
+            self._size = QtCore.QSizeF(max(80.0, event.pos().x()),
+                                       max(50.0, event.pos().y()))
+            self.update()
+            event.accept()
+            return
+        before = self.pos()
+        super().mouseMoveEvent(event)
+        delta = self.pos() - before
+        if not delta.isNull():
+            for item in self._passengers:
+                item.setPos(item.pos() + delta)
+
+    def mouseReleaseEvent(self, event) -> None:
+        was_resizing = self._resizing
+        self._resizing = False
+        self._passengers = []
+        super().mouseReleaseEvent(event)
+        self.box.rect = (self.pos().x(), self.pos().y(),
+                         self._size.width(), self._size.height())
+        scene = self.scene()
+        if (was_resizing or True) and scene and hasattr(scene, "graph_changed"):
+            scene.graph_changed.emit()
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if event.pos().y() <= self.TITLE_H:
+            scene = self.scene()
+            views = scene.views() if scene else []
+            parent = views[0] if views else None
+            title, accepted = QtWidgets.QInputDialog.getText(
+                parent, "Name this group",
+                "What do these nodes do?", text=self.box.title)
+            if accepted:
+                self.box.title = title.strip()
+                self.update()
+                if scene and hasattr(scene, "graph_changed"):
+                    scene.graph_changed.emit()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+
 class NodeItem(QtWidgets.QGraphicsItem):
     def __init__(self, graph: Graph, node: Node):
         super().__init__()
@@ -422,6 +555,13 @@ class NodeItem(QtWidgets.QGraphicsItem):
         # once here rather than on every repaint: it reads a zip.
         self.has_help = vexhelp.page(self.definition.vex_function) is not None
         self.status_text = ""
+        # Hovering answers "what does this one do?" without a click: the
+        # definition's summary (and its one-line help), never examples.
+        tip = self.definition.summary
+        if self.definition.help:
+            tip = f"{tip}\n{self.definition.help}" if tip else self.definition.help
+        if tip:
+            self.setToolTip(tip)
 
         self.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
         self.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)

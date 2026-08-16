@@ -79,6 +79,27 @@ class Link:
 
 
 @dataclass
+class Box:
+    """A titled rectangle that groups nodes visually - Houdini's network box.
+
+    Membership is geometric, the way Houdini's boxes work: whatever nodes sit
+    inside the rectangle move with it. The box says nothing to the emitter;
+    it exists so a person can write "these compute the matrix" on the canvas.
+    """
+    id: str
+    title: str = ""
+    rect: tuple[float, float, float, float] = (0.0, 0.0, 200.0, 120.0)
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "title": self.title, "rect": list(self.rect)}
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "Box":
+        return cls(id=raw["id"], title=raw.get("title", ""),
+                   rect=tuple(raw.get("rect", (0, 0, 200, 120))))
+
+
+@dataclass
 class FunctionSignature:
     """What a user-defined function looks like from the outside."""
     name: str
@@ -145,7 +166,18 @@ class Graph:
         self.functions: dict[str, Graph] = {}
         self.local_defs: dict[str, NodeDef] = {}
         self.signature: FunctionSignature | None = None   # set on inner graphs
+        self.boxes: list[Box] = []
         self._counter = 0
+
+    def add_box(self, title: str,
+                rect: tuple[float, float, float, float]) -> Box:
+        self._counter += 1
+        box = Box(id=f"box_{self._counter}", title=title, rect=rect)
+        self.boxes.append(box)
+        return box
+
+    def remove_box(self, box_id: str) -> None:
+        self.boxes = [b for b in self.boxes if b.id != box_id]
 
     def define_function(self, inner: "Graph") -> None:
         """Adopt an inner graph as this document's function."""
@@ -455,6 +487,8 @@ class Graph:
         if self.functions:
             out["functions"] = {name: inner.to_dict()
                                 for name, inner in self.functions.items()}
+        if self.boxes:
+            out["boxes"] = [b.to_dict() for b in self.boxes]
         return out
 
     def to_json(self, *, indent: int = 2) -> str:
@@ -491,6 +525,7 @@ class Graph:
             graph.signature = FunctionSignature.from_dict(raw["signature"])
         for inner_raw in raw.get("functions", {}).values():
             graph.define_function(cls.from_dict(inner_raw, registry))
+        graph.boxes = [Box.from_dict(b) for b in raw.get("boxes", ())]
         return graph
 
     @classmethod

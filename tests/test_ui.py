@@ -554,25 +554,21 @@ def test_committing_an_edit_by_pressing_enter_does_not_crash(editor):
 
 # ------------------------------------------------------------------ text size
 
-def test_text_size_control_grows_node_boxes(editor):
+def test_text_size_buttons_grow_and_shrink_node_boxes(editor):
     node = editor.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
     before = node.boundingRect().width()
 
-    editor.text_size.setCurrentText("150%")
-
+    for _ in range(4):                      # all the way up the steps
+        editor.text_larger.click()
     assert node.boundingRect().width() > before
     assert theme.get_ui_scale() == pytest.approx(1.5)
+    assert editor.text_size_label.text() == "150%"
 
-
-def test_text_size_setting_is_restored_on_smaller_value(editor):
-    node = editor.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
-    editor.text_size.setCurrentText("150%")
-    grown = node.boundingRect().width()
-
-    editor.text_size.setCurrentText("90%")
-
-    assert node.boundingRect().width() < grown
+    for _ in range(6):                      # and past the bottom, clamped
+        editor.text_smaller.click()
+    assert node.boundingRect().width() < before
     assert theme.get_ui_scale() == pytest.approx(0.9)
+    assert editor.text_size_label.text() == "90%"
 
 
 def test_repeated_text_size_changes_do_not_crash(app, registry):
@@ -595,7 +591,7 @@ def test_repeated_text_size_changes_do_not_crash(app, registry):
     app.processEvents()
 
     for value in ["90%", "150%", "100%", "130%", "90%", "115%"] * 3:
-        widget.text_size.setCurrentText(value)
+        widget._set_text_size(value)
         app.processEvents()
         widget.view.viewport().repaint()
         app.processEvents()
@@ -1371,3 +1367,56 @@ def test_collapse_from_the_panel_is_transactional(editor):
     snapshot = editor.graph.to_dict()
     assert not editor.collapse_selection("bad")
     assert editor.graph.to_dict() == snapshot
+
+
+# ------------------------------------------------------- feedback round one
+
+def test_deleting_the_edited_node_frees_the_keyboard(editor):
+    """A stale row editor once routed Delete and Ctrl+Z into a text field
+    that no longer existed - killing the keyboard for the session."""
+    item = editor.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
+    row = next(r for r in item.rows if r.key == "param:attrib")
+    editor.scene.edit_row(row)
+    assert editor.scene.is_editing
+    item.setSelected(True)
+    editor.scene.delete_selected()
+    assert not editor.scene.is_editing
+
+
+def test_the_canvas_pans_effectively_forever(editor):
+    rect = editor.view.sceneRect()
+    assert rect.width() >= 200000 and rect.height() >= 200000
+
+
+def test_the_search_placeholder_counts_the_real_registry(editor):
+    count = sum(1 for _ in editor.registry)
+    assert str(count) in editor.browser.search.placeholderText()
+
+
+def test_nodes_carry_their_summary_as_a_tooltip(editor):
+    item = editor.scene.add_node("random_number", QtCore.QPointF(0, 0))
+    assert "random" in item.toolTip().lower()
+
+
+def test_boxes_survive_saving_and_deleting_one_keeps_its_nodes(editor):
+    from vexgraph.ui.items import BoxItem
+    node = editor.scene.add_node("attrib_set", QtCore.QPointF(100, 60))
+    box_item = editor.scene.add_box(QtCore.QRectF(50, 20, 400, 240))
+    box_item.box.title = "these compute the matrix"
+
+    clone = Graph.from_dict(editor.graph.to_dict(), editor.registry)
+    assert clone.boxes and clone.boxes[0].title == "these compute the matrix"
+
+    editor.scene.clearSelection()
+    box_item.setSelected(True)
+    editor.scene.delete_selected()
+    assert not editor.graph.boxes
+    assert node.node.id in editor.graph.nodes    # grouping is not ownership
+
+
+def test_apply_button_hides_while_live_is_on(editor):
+    assert editor.apply_button.isHidden()
+    editor.auto_apply.setChecked(False)
+    assert not editor.apply_button.isHidden()
+    editor.auto_apply.setChecked(True)
+    assert editor.apply_button.isHidden()

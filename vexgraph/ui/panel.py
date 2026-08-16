@@ -135,6 +135,8 @@ class VexGraphEditor(QtWidgets.QWidget):
         # something the emitter produced. While it is, the emitter keeps off.
         self._code_is_user_written = False
 
+        from . import prefs                                     # noqa: PLC0415
+        prefs.load()
         self._build_ui()
         self._install_history()
         self._install_key_filter()
@@ -173,6 +175,13 @@ class VexGraphEditor(QtWidgets.QWidget):
                          border-radius: 4px; }}
             QSplitter::handle {{ background: #1b1b1b; }}
             QLabel {{ color: {theme.PANEL_TEXT.name()}; }}
+            QMenu {{ background: #2b2b2b; border: 1px solid #454545;
+                     padding: 4px; }}
+            QMenu::item {{ padding: 5px 22px; border-radius: 3px; }}
+            QMenu::item:selected {{ background: #4a6fa5; color: #ffffff; }}
+            QMenu::item:disabled {{ color: #6a6a6a; }}
+            QMenu::separator {{ height: 1px; background: #454545;
+                                margin: 4px 6px; }}
         """)
 
         bar = QtWidgets.QHBoxLayout()
@@ -220,6 +229,12 @@ class VexGraphEditor(QtWidgets.QWidget):
 
         self.auto_apply = QtWidgets.QCheckBox("Live")
         self.auto_apply.setChecked(True)
+        # While Live is on, applying is automatic and the button is noise;
+        # it only appears when someone turns Live off and wants the manual
+        # moment back.
+        self.apply_button.setVisible(False)
+        self.auto_apply.toggled.connect(
+            lambda checked: self.apply_button.setVisible(not checked))
         self.auto_apply.setToolTip(
             "Write to the wrangle as you edit, so the viewport keeps up.\n"
             "Debounced, and a graph with errors is never written - the last\n"
@@ -236,13 +251,27 @@ class VexGraphEditor(QtWidgets.QWidget):
 
         bar.addSpacing(12)
         bar.addWidget(QtWidgets.QLabel("Text size"))
-        self.text_size = QtWidgets.QComboBox()
-        self.text_size.addItems(["90%", "100%", "115%", "130%", "150%"])
-        self.text_size.setCurrentText(f"{round(theme.get_ui_scale() * 100)}%")
-        self.text_size.setToolTip(
+        # Two buttons beat a dropdown for something you nudge until it looks
+        # right; the label between them says where you are.
+        self.text_smaller = QtWidgets.QPushButton("−")
+        self.text_smaller.setFixedWidth(28)
+        self.text_size_label = QtWidgets.QLabel(
+            f"{round(theme.get_ui_scale() * 100)}%")
+        self.text_size_label.setToolTip(
             "Scales node text, the code pane, the library and the assistant "
             "together.")
-        bar.addWidget(self.text_size)
+        self.text_larger = QtWidgets.QPushButton("+")
+        self.text_larger.setFixedWidth(28)
+        for widget in (self.text_smaller, self.text_size_label,
+                       self.text_larger):
+            bar.addWidget(widget)
+
+        self.prefs_button = QtWidgets.QPushButton("⚙")
+        self.prefs_button.setFixedWidth(32)
+        self.prefs_button.setToolTip(
+            "Preferences: grid size, node spacing.")
+        bar.addSpacing(6)
+        bar.addWidget(self.prefs_button)
 
         # Where a host (the Houdini panel) puts its own controls, so there is
         # one row of buttons instead of a second strip above this one - which
@@ -452,7 +481,12 @@ class VexGraphEditor(QtWidgets.QWidget):
         # keys. Houdini binds the arrows to frame stepping and Home/End to the
         # frame range, so without this an attempt to move the cursor through a
         # word scrubs the timeline instead. Letting the widget have the event
-        # and stopping it there is the whole fix.
+        # and stopping it there is the whole fix. `is_editing` is needed as
+        # well as the focus check - the embedded row editor is not always the
+        # global focus widget - and it is safe again: a stale flag once kept
+        # this branch alive after its field was gone, killing Delete and
+        # Ctrl+Z for the session, so the scene now closes the editor on every
+        # path that could orphan it (delete, reload, rebuild, Escape).
         if self.scene.is_editing or isinstance(
                 focus, (QtWidgets.QLineEdit, QtWidgets.QPlainTextEdit,
                         QtWidgets.QTextEdit, QtWidgets.QAbstractSpinBox)):
@@ -802,7 +836,9 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.issues.itemClicked.connect(self._select_from_issue)
         self.apply_button.clicked.connect(self._apply)
         self.run_over.currentTextChanged.connect(self._set_run_over)
-        self.text_size.currentTextChanged.connect(self._set_text_size)
+        self.text_smaller.clicked.connect(lambda: self._nudge_text_size(-1))
+        self.text_larger.clicked.connect(lambda: self._nudge_text_size(+1))
+        self.prefs_button.clicked.connect(self._open_preferences)
         self.browser.node_chosen.connect(self._place_from_browser)
         self.assistant.proposed.connect(self._propose)
         self.assistant.kept.connect(self._keep_proposal)
@@ -911,6 +947,22 @@ class VexGraphEditor(QtWidgets.QWidget):
     def _set_run_over(self, value: str) -> None:
         self.graph.run_over = value
         self._schedule()
+
+    _TEXT_STEPS = (0.9, 1.0, 1.15, 1.3, 1.5)
+
+    def _nudge_text_size(self, direction: int) -> None:
+        current = theme.get_ui_scale()
+        nearest = min(range(len(self._TEXT_STEPS)),
+                      key=lambda i: abs(self._TEXT_STEPS[i] - current))
+        step = max(0, min(len(self._TEXT_STEPS) - 1, nearest + direction))
+        self.text_size_label.setText(f"{round(self._TEXT_STEPS[step] * 100)}%")
+        self._set_text_size(f"{round(self._TEXT_STEPS[step] * 100)}%")
+
+    def _open_preferences(self) -> None:
+        from . import prefs                                     # noqa: PLC0415
+        if prefs.PreferencesDialog(self).exec():
+            self._show_message("Preferences saved. Tidy re-lays the graph "
+                               "with the new spacing.")
 
     def _set_text_size(self, value: str) -> None:
         theme.set_ui_scale(int(value.rstrip("%")) / 100)
