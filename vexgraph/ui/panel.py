@@ -48,6 +48,8 @@ def _default_folded(key: str) -> bool:
     the teacher one click away. Standalone there is no wrangle - the pane is
     the only window onto the code - so it starts open.
     """
+    if key == "learn":
+        return True          # the course is opt-in; the Learn button opens it
     return key == "code" and "hou" in sys.modules
 
 
@@ -130,6 +132,8 @@ class VexGraphEditor(QtWidgets.QWidget):
         # Name of the user-defined function whose graph the canvas currently
         # shows; "" means the main graph.
         self._open_function = ""
+        self._section_state: dict[str, dict] = {}
+        self._section_toggles: dict[str, object] = {}
         # Which sections were folded away last time. Small enough to belong in
         # the platform's own settings rather than a file of our own.
         self._settings = QtCore.QSettings("VEXgraph", "VEXgraph")
@@ -291,7 +295,12 @@ class VexGraphEditor(QtWidgets.QWidget):
 
         bar.addStretch(1)
 
-        # Right-aligned, out of the way of the work: help, then preferences.
+        # Right-aligned, out of the way of the work: learn, help, preferences.
+        self.learn_button = QtWidgets.QPushButton("Learn")
+        self.learn_button.setToolTip(
+            "The Beginner course: ten exercises, checked against your "
+            "graph as you build it.")
+        bar.addWidget(self.learn_button)
         self.help_button = QtWidgets.QPushButton("Help EN/ES")
         self.help_button.setToolTip("The manual, in English and Spanish.")
         bar.addWidget(self.help_button)
@@ -334,12 +343,19 @@ class VexGraphEditor(QtWidgets.QWidget):
         # The right pane stacks the code and the assistant, so a request and
         # the VEX it produced are on screen together rather than in rival tabs.
         self.assistant = AssistantPanel(self.registry)
+        from .learn_panel import LearnPanel                     # noqa: PLC0415
+        self.learn = LearnPanel(lambda: self.graph)
+        self.learn.ask_professor.connect(self._professor)
+        self.learn.open_manual.connect(self._open_help)
 
         right = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         code_side = QtWidgets.QWidget()
         code_layout = QtWidgets.QVBoxLayout(code_side)
         code_layout.setContentsMargins(0, 0, 0, 0)
         code_layout.setSpacing(0)
+        code_layout.addWidget(
+            self._folding_section("Learn", self.learn, "learn"))
+        code_layout.addWidget(self.learn, 1)
         code_layout.addWidget(
             self._folding_section("Generated VEX", self.code, "code"))
         code_layout.addWidget(self.code, 1)
@@ -461,7 +477,16 @@ class VexGraphEditor(QtWidgets.QWidget):
 
         label.clicked.connect(toggle)
         apply()
+        # So a button elsewhere (Learn, Ask the professor) can open a
+        # section without pretending to be a mouse.
+        self._section_state[key] = state
+        self._section_toggles[key] = toggle
         return label
+
+    def unfold_section(self, key: str) -> None:
+        state = self._section_state.get(key)
+        if state is not None and state["folded"]:
+            self._section_toggles[key]()
 
     def _section_label(self, text: str) -> QtWidgets.QLabel:
         label = QtWidgets.QLabel(text)
@@ -860,6 +885,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.text_larger.clicked.connect(lambda: self._nudge_text_size(+1))
         self.prefs_button.clicked.connect(self._open_preferences)
         self.help_button.clicked.connect(self._open_help)
+        self.learn_button.clicked.connect(lambda: self.unfold_section("learn"))
         self.browser.node_chosen.connect(self._place_from_browser)
         self.assistant.proposed.connect(self._propose)
         self.assistant.kept.connect(self._keep_proposal)
@@ -1014,6 +1040,13 @@ class VexGraphEditor(QtWidgets.QWidget):
         dialog = HelpDialog(self)
         dialog.setModal(False)
         dialog.show()
+
+    def _professor(self, question: str) -> None:
+        """The Learn panel's question, delivered to the assistant with the
+        exercise already attached - and the assistant brought into view."""
+        self.unfold_section("assistant")
+        self.assistant.input.setPlainText(question)
+        self.assistant.ask()
 
     def _set_text_size(self, value: str) -> None:
         theme.set_ui_scale(int(value.rstrip("%")) / 100)

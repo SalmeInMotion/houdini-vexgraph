@@ -1579,3 +1579,61 @@ def test_snippet_list_has_one_grabbable_scrollbar_and_no_arrows(app, registry):
     handle = rect(QtWidgets.QStyle.SubControl.SC_ScrollBarSlider)
     assert handle.height() >= 20 and handle.width() >= 8, handle
     picker.deleteLater()
+
+
+# ------------------------------------------------------------- learn mode
+
+@pytest.fixture
+def student(editor, monkeypatch):
+    """An editor whose Learn progress starts blank and stays out of the
+    real settings."""
+    from vexgraph import learn
+    editor.learn.progress = learn.Progress()
+    editor.learn._index = 0
+    editor.learn._hints_shown = 0
+    monkeypatch.setattr(editor.learn, "_save_progress", lambda: None)
+    editor.learn._show()
+    return editor
+
+
+def test_the_first_exercise_is_solvable_on_the_real_canvas(student):
+    """The student's actual journey: empty canvas fails with the first
+    lesson, building the graph passes, and the next exercise unlocks."""
+    student.learn.check()
+    assert "Set Attribute" in student.learn.verdict.text()
+
+    item = student.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
+    item.node.params.update(attrib="Cd", type="vector", value="{1, 0, 0}")
+    student.scene.connect_ports(
+        student.scene.node_items["start"].ports[("exec", False)],
+        item.ports[("exec", True)])
+    student.learn.check()
+    assert "Solved" in student.learn.verdict.text()
+    assert "paint" in student.learn.progress.completed
+    assert student.learn.next_button.isEnabled()
+
+
+def test_hints_stage_and_are_counted(student):
+    assert student.learn._hints_shown == 0
+    student.learn._reveal_hint()
+    student.learn._reveal_hint()
+    assert student.learn._hints_shown == 2
+    assert student.learn.progress.hints_used["paint"] == 2
+    assert "💡" in student.learn.body.toHtml()
+
+
+def test_the_professor_gets_the_exercise_as_context(student, monkeypatch):
+    asked = []
+    monkeypatch.setattr(student.assistant, "ask",
+                        lambda: asked.append(
+                            student.assistant.input.toPlainText()))
+    student.learn._call_professor()
+    assert asked and "Paint everything red" in asked[0]
+    assert "without giving me the finished VEX" in asked[0]
+
+
+def test_the_learn_button_unfolds_the_course(editor):
+    state = editor._section_state["learn"]
+    assert state["folded"], "the course starts folded - it is opt-in"
+    editor.learn_button.click()
+    assert not state["folded"]
