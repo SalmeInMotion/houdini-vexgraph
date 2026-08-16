@@ -8,7 +8,9 @@ sent the exercise as context - but the course never depends on it.
 
 from __future__ import annotations
 
+import html
 import json
+import re
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -20,11 +22,13 @@ class LearnPanel(QtWidgets.QWidget):
     ask_professor = QtCore.Signal(str)        # question, exercise attached
     open_manual = QtCore.Signal()
     focus_changed = QtCore.Signal(object)     # set[str] of node types, or None
+    reveal_node = QtCore.Signal(str)          # node type -> find it in the library
     scene_requested = QtCore.Signal(object)   # learn.Scene to build
 
-    def __init__(self, get_graph, parent=None):
+    def __init__(self, get_graph, registry=None, parent=None):
         super().__init__(parent)
         self._get_graph = get_graph
+        self._registry = registry
         self._course = learn.BEGINNER
         self._index = 0
         self._hints_shown = 0
@@ -35,6 +39,13 @@ class LearnPanel(QtWidgets.QWidget):
         self.header.setFont(theme.ui_font(9, bold=True))
         self.body = QtWidgets.QTextBrowser()
         self.body.setOpenExternalLinks(False)
+        # Node names and functions read as links because they are ones: blue,
+        # and they go somewhere useful.
+        self.body.setStyleSheet("QTextBrowser { background: transparent; }")
+        palette = self.body.palette()
+        palette.setColor(QtGui.QPalette.ColorRole.Link,
+                         QtGui.QColor("#6db3f2"))
+        self.body.setPalette(palette)
         self.body.anchorClicked.connect(self._follow)
         self.body.setFont(theme.ui_font(9))
 
@@ -143,19 +154,29 @@ class LearnPanel(QtWidgets.QWidget):
                 f"{exercise.scene.describe}</p>")
         if exercise.nodes:
             # Naming the search word is the difference between "add a node"
-            # and a beginner staring at 1360 of them.
+            # and a beginner staring at 1360 of them - and naming what the
+            # node is CALLED matters just as much: typing "modulo" finds a
+            # node labelled Remainder, and being told only the first reads as
+            # an instruction to use a node that does not exist.
             rows = "".join(
-                f"<li><b>Tab → “{term}”</b> — {purpose}</li>"
-                for term, _type, purpose in exercise.nodes)
+                f"<li>Tab → “{term}” → <a href='node:{node_type}'>"
+                f"{self._label_of(node_type)}</a> — {purpose}</li>"
+                for term, node_type, purpose in exercise.nodes)
             parts.append(
-                "<p style='color:#8fa4b0'>Nodes for this exercise:</p>"
+                "<p style='color:#8fa4b0'>Nodes for this exercise "
+                "<span style='color:#6a6a6a'>(click one to find it in the "
+                "library)</span>:</p>"
                 f"<ul style='color:#a8b4bc'>{rows}</ul>")
-        parts.append("<p>" + exercise.steps.replace("\n\n", "</p><p>")
+        steps = self._linkify(exercise.steps, exercise)
+        parts.append("<p>" + steps.replace("\n\n", "</p><p>")
                      .replace("\n", "<br>") + "</p>")
         for shown in range(self._hints_shown):
             if shown < len(exercise.hints):
+                # Hints are where the function names live - and a function
+                # name is exactly the thing worth a trip to SideFX.
                 parts.append(f"<p style='color:#b0a48f'>💡 "
-                             f"{exercise.hints[shown]}</p>")
+                             f"{self._linkify(exercise.hints[shown], exercise)}"
+                             f"</p>")
         if done and exercise.deeper:
             links = " · ".join(
                 f"<a href='{url}'>{label}</a>" for label, url in exercise.deeper)
@@ -178,6 +199,57 @@ class LearnPanel(QtWidgets.QWidget):
         self.back_button.setToolTip("Previous exercise")
         self.next_button.setToolTip("Next exercise")
         self.hint_button.setEnabled(self._hints_shown < len(exercise.hints))
+
+    def _label_of(self, node_type: str) -> str:
+        """What the node is actually called on screen."""
+        definition = (self._registry.get(node_type)
+                      if self._registry is not None else None)
+        return definition.label if definition is not None else node_type
+
+    def _linkify(self, text: str, exercise) -> str:
+        """Node names and VEX functions become links you can follow.
+
+        Two kinds, both worth a click: the node the sentence is telling you
+        to find (it opens the library at it, under whatever it is really
+        called), and any VEX function mentioned (it opens SideFX's page for
+        it, which is where the real detail lives).
+        """
+        from .. import help as vexhelp                            # noqa: PLC0415
+
+        escaped = html.escape(text)
+        stash: list[str] = []
+
+        def keep(markup: str) -> str:
+            """Park finished markup so later passes cannot chew through it."""
+            stash.append(markup)
+            return f"\x00{len(stash) - 1}\x00"
+
+        # Functions first, and by name-followed-by-paren rather than empty
+        # parens: the hints write fit(value, oldmin, ...) as often as they
+        # write normalize(). The help archive is the filter - a name with no
+        # page is not a VEX function, which is what keeps `if (` out.
+        def function_link(match: re.Match) -> str:
+            name = match.group(1)
+            doc = vexhelp.page(name)
+            if doc is None:
+                return match.group(0)
+            return keep(f"<a href='{doc.url}'>{name}</a>") + match.group(2)
+
+        escaped = re.sub(r"\b([a-z_][a-z0-9_]*)(\s*\()", function_link, escaped)
+
+        # Then node names, once each: they open the library at that node,
+        # under whatever it is really called.
+        for term, node_type, _purpose in exercise.nodes:
+            label = self._label_of(node_type)
+            pattern = re.compile(rf"\b{re.escape(term)}\b", re.IGNORECASE)
+            replacement = keep(
+                f"<a href='node:{node_type}'>{term}</a>"
+                + (f" <span style='color:#6a6a6a'>({label})</span>"
+                   if label.lower() != term.lower() else ""))
+            escaped = pattern.sub(replacement, escaped, count=1)
+
+        return re.sub(r"\x00(\d+)\x00",
+                      lambda m: stash[int(m.group(1))], escaped)
 
     def _go(self, step: int) -> None:
         self._index = max(0, min(len(self._course) - 1, self._index + step))
@@ -240,7 +312,10 @@ class LearnPanel(QtWidgets.QWidget):
             f"without giving me the finished VEX.")
 
     def _follow(self, url: QtCore.QUrl) -> None:
-        if url.toString().startswith("manual"):
+        text = url.toString()
+        if text.startswith("manual"):
             self.open_manual.emit()
+        elif text.startswith("node:"):
+            self.reveal_node.emit(text[5:])
         else:
             QtGui.QDesktopServices.openUrl(url)

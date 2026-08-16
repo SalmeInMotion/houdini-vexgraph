@@ -19,6 +19,7 @@ from PySide6 import QtCore, QtWidgets
 
 from vexgraph import Graph, default_registry
 from vexgraph.codegen import generate
+from vexgraph.parser import import_vex
 from vexgraph.ui.panel import VexGraphEditor
 
 # Where the graph lives on the node. Prefixed because user data is a shared
@@ -192,6 +193,29 @@ def write_graph(node, graph: Graph) -> None:
     node.setUserData(USER_DATA_KEY, graph.to_json(indent=0))
 
 
+def _body(code: str) -> str:
+    """A snippet with the generated header and blank lines taken off.
+
+    What is being compared is whether the VEX *means* something different,
+    not whether it was formatted differently.
+    """
+    return "\n".join(line.rstrip() for line in code.splitlines()
+                     if line.strip() and "Built with VEXgraph" not in line)
+
+
+def wrangle_was_edited(node, graph: Graph) -> bool:
+    """Whether the wrangle's VEX no longer matches the stored graph.
+
+    Somebody can always type into the wrangle directly - that is the point of
+    a wrangle - and their work must not be quietly replaced by a graph from
+    the last time this editor was open.
+    """
+    parm = node.parm("snippet")
+    if parm is None or graph is None:
+        return False
+    return _body(parm.evalAsString()) != _body(generate(graph).code)
+
+
 def apply_to_node(node, graph: Graph, code: str) -> None:
     """Write the graph and its VEX onto the wrangle, in one undo block."""
     with hou.undos.group("Apply VEXgraph"):
@@ -265,13 +289,33 @@ class VexGraphPanel(QtWidgets.QWidget):
         # before the button existed pick it up here.
         add_open_button(node)
         graph = read_graph(node, self.registry)
+        snippet = node.parm("snippet")
+        code = snippet.evalAsString() if snippet is not None else ""
+
+        if graph is not None and wrangle_was_edited(node, graph):
+            # The wrangle is the thing that runs; the stored graph is only a
+            # record of how it was last built. So the code that is actually
+            # there wins by default, and replacing it is an explicit choice.
+            keep = hou.ui.displayMessage(
+                f"{node.path()} has VEX that differs from the graph VEXgraph "
+                f"stored for it - someone edited the wrangle directly.\n\n"
+                f"Which one do you want?",
+                buttons=("Use the wrangle's VEX", "Restore the stored graph"),
+                default_choice=0, close_choice=0,
+                severity=hou.severityType.ImportantMessage)
+            if keep == 0:
+                graph = None                     # rebuild from the code below
+        if graph is None and code.strip():
+            # Read what is really in the node. Nothing is lost either way:
+            # whatever the importer cannot model stays as Inline VEX.
+            graph = import_vex(code, self.registry).graph
         if graph is None:
             graph = Graph(self.registry)
             graph.add("start", "start")
-            class_parm = node.parm("class")
-            if class_parm is not None:
-                token = class_parm.evalAsString()
-                graph.run_over = CLASS_TO_RUN_OVER.get(token, "points")
+        class_parm = node.parm("class")
+        if class_parm is not None and not graph.nodes.keys() - {"start"}:
+            token = class_parm.evalAsString()
+            graph.run_over = CLASS_TO_RUN_OVER.get(token, "points")
         self.editor.set_graph(graph)
 
     def create_wrangle(self) -> None:

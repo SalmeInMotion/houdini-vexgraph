@@ -104,3 +104,22 @@ def test_a_colour_typed_or_built_both_count(registry):
                      "@Cd = set(1.0, 0.0, 0.0);"):
         report = import_vex(spelling, registry)
         assert exercise.review(report.graph) == "", spelling
+
+
+def test_an_exercise_never_names_a_node_that_does_not_exist(registry):
+    """Ivan's stumble: step 2 said "Tab, modulo" and the node that appears is
+    called Remainder, which reads as an instruction to use something that is
+    not there. Where the search word and the label differ, the exercise must
+    say both."""
+    trouble = []
+    for exercise in learn.BEGINNER:
+        for term, node_type, _purpose in exercise.nodes:
+            definition = registry.get(node_type)
+            assert definition is not None, f"{exercise.key}: {node_type}"
+            if definition.label.lower() == term.lower():
+                continue
+            said = f"{exercise.steps} {' '.join(exercise.hints)}".lower()
+            if definition.label.lower() not in said:
+                trouble.append(f"{exercise.key}: says '{term}', node is "
+                               f"'{definition.label}'")
+    assert not trouble, "\n".join(trouble)

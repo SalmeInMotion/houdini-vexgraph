@@ -134,6 +134,23 @@ class CodeView(QtWidgets.QPlainTextEdit):
         if not self._loading:
             self.edited.emit()
 
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        """Take the keyboard on a click, and again once Houdini has settled.
+
+        Inside a Houdini pane the first click is spent activating the pane,
+        and Houdini moves focus itself while doing that - after this click
+        would otherwise have finished. Claiming focus now *and* on the next
+        event-loop turn is what makes one click enough to type, instead of
+        looking like a pane that refuses to be written in.
+        """
+        super().mousePressEvent(event)
+        self.setFocus(QtCore.Qt.FocusReason.MouseFocusReason)
+        window = self.window()
+        if window is not None:
+            window.activateWindow()
+        QtCore.QTimer.singleShot(
+            0, lambda: self.setFocus(QtCore.Qt.FocusReason.MouseFocusReason))
+
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
         completer = self._completer
         popup_open = completer is not None and completer.popup().isVisible()

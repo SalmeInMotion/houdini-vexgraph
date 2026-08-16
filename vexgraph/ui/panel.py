@@ -352,10 +352,11 @@ class VexGraphEditor(QtWidgets.QWidget):
         # the VEX it produced are on screen together rather than in rival tabs.
         self.assistant = AssistantPanel(self.registry)
         from .learn_panel import LearnPanel                     # noqa: PLC0415
-        self.learn = LearnPanel(lambda: self.graph)
+        self.learn = LearnPanel(lambda: self.graph, self.registry)
         self.learn.ask_professor.connect(self._professor)
         self.learn.open_manual.connect(self._open_help)
         self.learn.focus_changed.connect(self.set_node_focus)
+        self.learn.reveal_node.connect(self._reveal_from_learn)
         self.learn.scene_requested.connect(self.scene_requested)
 
         right = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
@@ -366,8 +367,23 @@ class VexGraphEditor(QtWidgets.QWidget):
         code_layout.addWidget(
             self._folding_section("Learn", self.learn, "learn"))
         code_layout.addWidget(self.learn, 1)
-        code_layout.addWidget(
-            self._folding_section("Generated VEX", self.code, "code"))
+        # The header carries the build button. Ctrl+Enter does the same, but
+        # a keyboard shortcut inside Houdini is a thing that sometimes
+        # arrives - a button is a thing that always does, and it is the only
+        # visible sign that typed code has to be committed at all.
+        code_header = QtWidgets.QWidget()
+        code_header_row = QtWidgets.QHBoxLayout(code_header)
+        code_header_row.setContentsMargins(0, 0, 6, 0)
+        code_header_row.setSpacing(6)
+        code_header_row.addWidget(
+            self._folding_section("Generated VEX", self.code, "code"), 1)
+        self.build_button = QtWidgets.QPushButton("Build nodes")
+        self.build_button.setToolTip(
+            "Turn what is written here into nodes (Ctrl+Enter).")
+        self.build_button.setStyleSheet(
+            "QPushButton { padding: 2px 10px; }")
+        code_header_row.addWidget(self.build_button)
+        code_layout.addWidget(code_header)
         code_layout.addWidget(self.code, 1)
         code_layout.addWidget(
             self._folding_section("Problems", self.issues, "issues"))
@@ -926,6 +942,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.prefs_button.clicked.connect(self._open_preferences)
         self.help_button.clicked.connect(self._open_help)
         self.learn_button.toggled.connect(self._show_learn)
+        self.build_button.clicked.connect(self.build_from_code)
         self.browser.node_chosen.connect(self._place_from_browser)
         self.assistant.proposed.connect(self._propose)
         self.assistant.kept.connect(self._keep_proposal)
@@ -1090,6 +1107,10 @@ class VexGraphEditor(QtWidgets.QWidget):
         """
         self._node_focus = types
         self.browser.set_focus(types)
+
+    def _reveal_from_learn(self, node_type: str) -> None:
+        """A node named in an exercise, opened in the library where it lives."""
+        self.browser.reveal(node_type)
 
     def _professor(self, question: str) -> None:
         """The Learn panel's question, delivered to the assistant with the

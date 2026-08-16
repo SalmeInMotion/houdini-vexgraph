@@ -332,6 +332,39 @@ def test_an_old_wrangles_button_is_upgraded(geo):
     assert not vh.add_open_button(node), "a current button is left alone"
 
 
+
+def test_a_hand_edited_wrangle_is_noticed(geo):
+    """Somebody typing into the wrangle directly is the normal case, not a
+    mistake - and their VEX must not be silently replaced by whatever graph
+    VEXgraph stored last time it was open."""
+    registry = default_registry()
+    report = import_vex("@Cd = set(1, 0, 0);", registry)
+    node = vh.create_wrangle({})
+    vh.apply_to_node(node, report.graph, generate(report.graph).code)
+
+    stored = vh.read_graph(node, registry)
+    assert not vh.wrangle_was_edited(node, stored), "nothing was touched yet"
+
+    node.parm("snippet").set("@P.y = 10;")
+    assert vh.wrangle_was_edited(node, stored), "a hand edit must be seen"
+
+    # Reformatting is not an edit: the comparison is about meaning.
+    node.parm("snippet").set(generate(stored).code + "\n\n")
+    assert not vh.wrangle_was_edited(node, stored)
+
+
+def test_the_wrangles_own_vex_can_be_read_back_as_nodes(geo):
+    """The "keep what is in the wrangle" answer has to lead somewhere: the
+    importer turns that code into the graph the editor then shows."""
+    registry = default_registry()
+    node = vh.create_wrangle({})
+    node.parm("snippet").set("@P.y = 10;\n@Cd = set(0, 1, 0);")
+
+    graph = import_vex(node.parm("snippet").evalAsString(), registry).graph
+    types = {n.type for n in graph.nodes.values()}
+    assert "attrib_set_component" in types and "attrib_set" in types
+
+
 def _run() -> int:
     checks = [(n, f) for n, f in sorted(globals().items())
               if n.startswith("test_") and callable(f)]
