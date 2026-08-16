@@ -555,6 +555,11 @@ class NodeItem(QtWidgets.QGraphicsItem):
         # once here rather than on every repaint: it reads a zip.
         self.has_help = vexhelp.page(self.definition.vex_function) is not None
         self.status_text = ""
+        # A note is a place to write, so it is a box rather than a row: the
+        # text wraps inside it and the corner drags to whatever size the
+        # writing needs. The size lives on the node, so it survives saving.
+        self.is_note = self.definition.type == "note"
+        self._resizing = False
         # Hovering answers "what does this one do?" without a click: the
         # definition's summary (and its one-line help), never examples.
         tip = self.definition.summary
@@ -567,6 +572,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         self.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
         self.setFlag(
             QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
+        self.setAcceptHoverEvents(True)     # the note's resize corner
         self.setPos(QtCore.QPointF(*node.pos))
         self.rebuild()
 
@@ -643,6 +649,91 @@ class NodeItem(QtWidgets.QGraphicsItem):
 
     # -------------------------------------------------------------- building
 
+    NOTE_MIN = (170.0, 90.0)
+    NOTE_HANDLE = 14.0
+
+    def note_text(self) -> str:
+        return self.node.params.get("text", "")
+
+    def _note_size(self) -> tuple[float, float]:
+        try:
+            width = float(self.node.params.get("width", 260))
+            height = float(self.node.params.get("height", 130))
+        except (TypeError, ValueError):
+            width, height = 260.0, 130.0
+        return (max(self.NOTE_MIN[0], width), max(self.NOTE_MIN[1], height))
+
+    def _rebuild_note(self) -> None:
+        """A note is a box you write in: one exec pin, and room for words."""
+        if self.definition.exec_in:
+            self._add_port(EXEC_PIN, "", "", is_input=True, is_exec=True,
+                           y=theme.TITLE_HEIGHT + 6)
+        self._add_port(EXEC_PIN, "", "", is_input=False, is_exec=True,
+                       y=theme.TITLE_HEIGHT + 6)
+        self._width, self._height = self._note_size()
+        self.update()
+
+    def _paint_note(self, painter: QtGui.QPainter) -> None:
+        rect = QtCore.QRectF(theme.PADDING_X,
+                             theme.TITLE_HEIGHT + theme.PORT_ROW_HEIGHT,
+                             self._width - theme.PADDING_X * 2,
+                             self._height - theme.TITLE_HEIGHT
+                             - theme.PORT_ROW_HEIGHT - 8)
+        painter.setFont(theme.ui_font(8))
+        painter.setPen(theme.ROW_VALUE_TEXT)
+        text = self.note_text() or "Double-click to write"
+        painter.drawText(rect, int(QtCore.Qt.AlignmentFlag.AlignLeft
+                                   | QtCore.Qt.AlignmentFlag.AlignTop
+                                   | QtCore.Qt.TextFlag.TextWordWrap), text)
+        # The corner you drag, drawn as three quiet lines.
+        corner = QtCore.QPointF(self._width, self._height)
+        painter.setPen(QtGui.QPen(theme.NODE_OUTLINE, 1))
+        for offset in (4, 8, 12):
+            painter.drawLine(corner + QtCore.QPointF(-offset, -3),
+                             corner + QtCore.QPointF(-3, -offset))
+
+    def _on_note_handle(self, pos: QtCore.QPointF) -> bool:
+        return (self.is_note
+                and pos.x() > self._width - self.NOTE_HANDLE
+                and pos.y() > self._height - self.NOTE_HANDLE)
+
+    def hoverMoveEvent(self, event) -> None:
+        if self._on_note_handle(event.pos()):
+            self.setCursor(QtCore.Qt.CursorShape.SizeFDiagCursor)
+        else:
+            self.unsetCursor()
+        super().hoverMoveEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        if (self.is_note and event.button() == QtCore.Qt.MouseButton.LeftButton
+                and self._on_note_handle(event.pos())):
+            self._resizing = True
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._resizing:
+            self.prepareGeometryChange()
+            self._width = max(self.NOTE_MIN[0], event.pos().x())
+            self._height = max(self.NOTE_MIN[1], event.pos().y())
+            self.update()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if self._resizing:
+            self._resizing = False
+            self.node.params["width"] = str(round(self._width))
+            self.node.params["height"] = str(round(self._height))
+            scene = self.scene()
+            if scene is not None and hasattr(scene, "graph_changed"):
+                scene.graph_changed.emit()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
     def rebuild(self) -> None:
         """Recreate ports and rows. Cheap enough to do on any change."""
         detached = []
@@ -656,6 +747,9 @@ class NodeItem(QtWidgets.QGraphicsItem):
         retire(detached)        # freeing these now would crash the next repaint
 
         self.prepareGeometryChange()
+        if self.is_note:
+            self._rebuild_note()
+            return
         self._width = self._measure_width()
         y = theme.TITLE_HEIGHT + 6
 
@@ -827,6 +921,9 @@ class NodeItem(QtWidgets.QGraphicsItem):
                                     theme.NODE_RADIUS, theme.NODE_RADIUS)
 
         self._paint_title(painter)
+        if self.is_note:
+            self._paint_note(painter)
+            return
         self._paint_port_labels(painter)
 
     def _paint_title(self, painter: QtGui.QPainter) -> None:

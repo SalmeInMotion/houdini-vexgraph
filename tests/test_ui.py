@@ -524,8 +524,8 @@ def test_clicking_a_row_and_typing_reaches_the_embedded_editor(editor):
     editor.show()
     QtWidgets.QApplication.processEvents()
 
-    item = editor.scene.add_node("note", QtCore.QPointF(0, 0))
-    row = next(r for r in item.rows if r.key == "param:text")
+    item = editor.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
+    row = next(r for r in item.rows if r.key == "param:attrib")
 
     view_pos = editor.view.mapFromScene(row.mapToScene(row.boundingRect().center()))
     QtTest.QTest.mouseClick(editor.view.viewport(),
@@ -553,8 +553,8 @@ def test_committing_an_edit_by_pressing_enter_does_not_crash(editor):
     editor.show()
     QtWidgets.QApplication.processEvents()
 
-    item = editor.scene.add_node("note", QtCore.QPointF(0, 0))
-    row = next(r for r in item.rows if r.key == "param:text")
+    item = editor.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
+    row = next(r for r in item.rows if r.key == "param:attrib")
     view_pos = editor.view.mapFromScene(row.mapToScene(row.boundingRect().center()))
     QtTest.QTest.mouseClick(editor.view.viewport(),
                             QtCore.Qt.MouseButton.LeftButton,
@@ -568,7 +568,7 @@ def test_committing_an_edit_by_pressing_enter_does_not_crash(editor):
     app.processEvents()      # runs the deferred close - this must not crash
 
     assert editor.scene._editor is None
-    assert item.node.params.get("text") == "hi"
+    assert item.node.params.get("attrib") == "hi"
 
 
 # ------------------------------------------------------------------ text size
@@ -670,9 +670,9 @@ def test_a_row_can_be_edited_more_than_once(editor):
     """Committing an edit must not make the field read-only from then on."""
     editor.show()
     QtWidgets.QApplication.processEvents()
-    item = editor.scene.add_node("note", QtCore.QPointF(0, 0))
+    item = editor.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
 
-    focused = _click_row(editor, item, "param:text")
+    focused = _click_row(editor, item, "param:attrib")
     QtTest.QTest.keyClicks(focused, "first")
     QtTest.QTest.keyClick(focused, QtCore.Qt.Key.Key_Return)
     QtWidgets.QApplication.instance().processEvents()
@@ -680,7 +680,7 @@ def test_a_row_can_be_edited_more_than_once(editor):
     node_id = item.node.id
     item = next(i for i in editor.scene.items()
                 if isinstance(i, NodeItem) and i.node.id == node_id)
-    focused = _click_row(editor, item, "param:text")
+    focused = _click_row(editor, item, "param:attrib")
     assert editor.scene.is_editing, "clicking the row a second time did not reopen it"
     line = editor.scene._editor.widget()
     line.selectAll()
@@ -688,17 +688,17 @@ def test_a_row_can_be_edited_more_than_once(editor):
     QtTest.QTest.keyClick(line, QtCore.Qt.Key.Key_Return)
     QtWidgets.QApplication.instance().processEvents()
 
-    assert editor.scene.graph.nodes[node_id].params["text"] == "second"
+    assert editor.scene.graph.nodes[node_id].params["attrib"] == "second"
 
 
 def test_backspace_while_editing_edits_text_not_the_graph(editor):
     """Backspace inside a field must delete a character, never the node."""
     editor.show()
     QtWidgets.QApplication.processEvents()
-    item = editor.scene.add_node("note", QtCore.QPointF(0, 0))
+    item = editor.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
     before = len(editor.scene.graph.nodes)
 
-    focused = _click_row(editor, item, "param:text")
+    focused = _click_row(editor, item, "param:attrib")
     QtTest.QTest.keyClicks(focused, "abc")
     line = editor.scene._editor.widget()
     QtTest.QTest.keyClick(line, QtCore.Qt.Key.Key_Backspace)
@@ -1914,3 +1914,49 @@ def test_an_answer_offers_to_build_itself(editor):
     assistant._build_the_answer()
     assert asked == [("Build a graph", "make the points wobble")]
     assert assistant.build_it.isHidden()
+
+
+# ---------------------------------------------------------------- notes
+
+def test_a_note_is_a_resizable_box_not_a_row(editor):
+    """Somewhere to write, sized to the writing."""
+    item = editor.scene.add_node("note", QtCore.QPointF(0, 0))
+    assert item.is_note
+    assert not item.rows, "a note has no one-line pill"
+    assert item.boundingRect().height() > 80
+
+    item.node.params.update(width="420", height="300")
+    item.rebuild()
+    assert item.boundingRect().width() > 400
+    assert item.boundingRect().height() > 290
+
+
+def test_a_multi_line_note_stays_a_comment(editor):
+    """Every line of it, or the second one arrives in the wrangle as code."""
+    from vexgraph.vccmap import check_source
+
+    item = editor.scene.add_node("note", QtCore.QPointF(0, 0))
+    item.node.params["text"] = "first line\nsecond line"
+    editor.scene.connect_ports(
+        editor.scene.node_items["start"].ports[("exec", False)],
+        item.ports[("exec", True)])
+    editor._regenerate()
+
+    code = editor.code.toPlainText()
+    assert "// first line" in code and "// second line" in code
+    check = check_source(code)
+    if check.checked:
+        assert check.ok, check.raw
+
+
+def test_notes_survive_the_round_trip(registry):
+    """They vanished on every Ctrl+Enter: the lexer drops comments, so the
+    writing someone did for themselves went with them."""
+    from vexgraph import generate
+    from vexgraph.parser import import_vex
+
+    source = ("// remember why\n// two lines of it\n@P.y += 1;\n"
+              "// and a tail note\n")
+    first = generate(import_vex(source, registry).graph).code
+    assert "// remember why" in first and "// and a tail note" in first
+    assert first == generate(import_vex(first, registry).graph).code

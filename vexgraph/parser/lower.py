@@ -339,8 +339,12 @@ class Importer:
             for match in re.finditer(r"\b([fivpu234sd])(\[\])?@(\w+)", self.source)
             if match.group(3) not in STANDARD_ATTRIBUTES
         }
+        self._comments = _comment_blocks(self.source)
         start = self.graph.add("start", "start")
-        self._chain(start.id, statements)
+        last = self._chain(start.id, statements)
+        # Anything written below the last statement still belongs on the
+        # canvas: a note at the end of a snippet is usually the summary.
+        self._notes_before(len(self.source) + 1, last, "exec")
         self._prune_dead()
         return self.report
 
@@ -367,6 +371,7 @@ class Importer:
         expression), and the statement's own node has to land after them.
         """
         for statement in statements:
+            previous, pin = self._notes_before(statement.start, previous, pin)
             self.report.total += 1
             mark = len(self.graph.nodes)
             self._cursor = (previous, pin)
@@ -390,6 +395,16 @@ class Importer:
                 self._cursor = (node_id, "exec")
             previous, pin = self._cursor
         return previous
+
+    def _notes_before(self, offset: int, previous: str,
+                      pin: str) -> tuple[str, str]:
+        """Place any comment blocks that sit above this point in the source."""
+        while self._comments and self._comments[0][0] < offset:
+            _at, text = self._comments.pop(0)
+            note = self.graph.add("note", self._name("note"), text=text)
+            self.graph.connect(previous, pin, note.id, "exec", is_exec=True)
+            previous, pin = note.id, "exec"
+        return previous, pin
 
     def _chain_body(self, previous: str, statements: list[Statement],
                     pin: str) -> str:
@@ -1607,6 +1622,44 @@ def _loop_variable_names(statements: list[Statement]) -> set[str]:
 
     walk(statements)
     return found
+
+
+def _comment_blocks(source: str) -> list[tuple[int, str]]:
+    """(offset, text) for each run of `//` lines standing on their own.
+
+    Comments are the one thing a person writes for themselves, and the lexer
+    drops them - so a Note built on the canvas vanished on the next Ctrl+Enter
+    and took its writing with it. Each block becomes a Note node instead.
+    The generated header and the assistant's run-over line are skipped: they
+    are ours, and would breed a new note on every round trip.
+    """
+    blocks: list[tuple[int, str]] = []
+    offset = 0
+    current: list[str] = []
+    started = 0
+    for line in source.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped.startswith("//"):
+            body = stripped[2:].strip()
+            # Ours, not theirs - skipped without breaking the block, because
+            # the header sits directly above the first real note and dropping
+            # the whole run would eat it on every round trip.
+            if "Built with VEXgraph" in body or RUN_OVER_HINT.match(body):
+                offset += len(line)
+                continue
+            if not current:
+                started = offset
+            current.append(body)
+        elif current:
+            blocks.append((started, "\n".join(current)))
+            current = []
+        offset += len(line)
+    if current:
+        blocks.append((started, "\n".join(current)))
+    return [(at, text) for at, text in blocks if text.strip()]
+
+
+RUN_OVER_HINT = re.compile(r"\s*run\s*over\s*:", re.IGNORECASE)
 
 
 def _reassigned_names(statements: list[Statement]) -> dict[str, bool]:

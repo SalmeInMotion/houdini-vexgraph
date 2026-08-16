@@ -738,6 +738,17 @@ class Emitter:
     def _builtin_start(self, node: Node, definition: NodeDef) -> list[Line]:
         return []
 
+    def _builtin_note(self, node: Node, definition: NodeDef) -> list[Line]:
+        """Every line of a note is a comment.
+
+        A note is a box you write paragraphs in, and `// {text}` only
+        comments the first line - the rest arrived in the wrangle as code and
+        refused to compile.
+        """
+        text = self.graph.param_value(node, "text")
+        lines = text.splitlines() or [""]
+        return [Line(f"// {line}".rstrip(), node.id) for line in lines]
+
     def _builtin_attrib_get(self, node: Node, definition: NodeDef) -> list[Line]:
         return []   # An attribute read is an expression; see _name_for.
 

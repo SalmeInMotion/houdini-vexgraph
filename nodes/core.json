@@ -286,12 +286,12 @@
    "type": "note",
    "label": "Note",
    "kind": "statement",
-   "summary": "A comment in the generated code. Does nothing.",
+   "summary": "A note on the canvas, and a comment in the code. Drag its corner to make room for more.",
    "params": [
     {
      "name": "text",
      "label": "Text",
-     "kind": "string",
+     "kind": "text",
      "default": "note"
     }
    ],
@@ -300,7 +300,8 @@
     "comment",
     "label",
     "documentation"
-   ]
+   ],
+   "builtin": "note"
   },
   {
    "type": "var_make",

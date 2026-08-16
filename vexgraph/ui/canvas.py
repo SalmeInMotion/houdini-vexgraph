@@ -524,6 +524,32 @@ class GraphScene(QtWidgets.QGraphicsScene):
         line.setFocus(QtCore.Qt.FocusReason.MouseFocusReason)
         QtCore.QTimer.singleShot(0, take_focus)
 
+    def edit_note(self, item) -> None:
+        """A plain multi-line window for a note's text."""
+        views = self.views()
+        dialog = QtWidgets.QDialog(views[0] if views else None)
+        dialog.setWindowTitle("Note")
+        dialog.resize(460, 260)
+        dialog.setSizeGripEnabled(True)
+
+        editor = QtWidgets.QPlainTextEdit(item.note_text())
+        editor.setFont(theme.ui_font(10))
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.addWidget(editor, 1)
+        layout.addWidget(buttons)
+
+        accepted = dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted
+        self.focus_canvas()
+        if accepted:
+            item.node.params["text"] = editor.toPlainText()
+            item.update()
+            self.graph_changed.emit()
+
     def edit_row_code(self, row: RowItem) -> None:
         """A resizable window for the multi-line fields.
 
@@ -967,7 +993,11 @@ class GraphView(QtWidgets.QGraphicsView):
         if not isinstance(item, RowItem):
             node = _owning_node(item)
             if node is not None:
-                if node.node.type.startswith("fn_"):
+                if node.is_note:
+                    # A note has no help page worth opening; what it wants is
+                    # somewhere to write.
+                    self.scene().edit_note(node)
+                elif node.node.type.startswith("fn_"):
                     self.function_opened.emit(node.node.type[3:])
                 else:
                     self.help_requested.emit(node.node.type)
