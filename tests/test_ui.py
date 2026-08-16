@@ -1485,3 +1485,11 @@ def test_the_help_dialog_carries_both_manuals(app):
         text = tabs.widget(index).toPlainText()
         assert needle in text
     dialog.deleteLater()
+
+
+def test_the_code_pane_starts_folded_only_inside_houdini(monkeypatch):
+    from vexgraph.ui.panel import _default_folded
+    assert not _default_folded("code"), "standalone: the pane is the teacher"
+    monkeypatch.setitem(sys.modules, "hou", object())
+    assert _default_folded("code")
+    assert not _default_folded("issues"), "only the code pane starts folded"

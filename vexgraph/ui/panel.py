@@ -8,6 +8,7 @@ after you stop.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -37,6 +38,17 @@ UNDO_DEPTH = 100
 
 # Qt's "no maximum", which PySide does not expose as a constant.
 QWIDGETSIZE_MAX = (1 << 24) - 1
+
+
+def _default_folded(key: str) -> bool:
+    """How a section starts the very first time; a saved choice always wins.
+
+    Inside Houdini the wrangle already shows the applied VEX and the screen
+    is scarce, so the code pane starts folded there: a clean canvas first,
+    the teacher one click away. Standalone there is no wrangle - the pane is
+    the only window onto the code - so it starts open.
+    """
+    return key == "code" and "hou" in sys.modules
 
 
 class SectionHeader(QtWidgets.QLabel):
@@ -431,7 +443,8 @@ class VexGraphEditor(QtWidgets.QWidget):
         # window has not been shown yet reports invisible whatever you set, so
         # asking Qt for the current state would fold the wrong way on the first
         # click of every session.
-        state = {"folded": self._settings.value(f"folded/{key}", False, type=bool)}
+        state = {"folded": self._settings.value(
+            f"folded/{key}", _default_folded(key), type=bool)}
 
         def apply() -> None:
             folded = state["folded"]
