@@ -673,6 +673,7 @@ class GraphView(QtWidgets.QGraphicsView):
     collapse_requested = QtCore.Signal()         # selection -> function
     save_function_requested = QtCore.Signal(str)  # fn name -> user library
     library_reveal_requested = QtCore.Signal(str)  # node type -> browser
+    favourites_changed = QtCore.Signal()         # a node was starred/unstarred
 
     def __init__(self, scene: GraphScene, parent=None):
         super().__init__(scene, parent)
@@ -873,6 +874,14 @@ class GraphView(QtWidgets.QGraphicsView):
         collapse.setEnabled(bool(selected))
         collapse.setData("collapse")
         if len(selected) == 1:
+            from .. import favourites                          # noqa: PLC0415
+            node_type = selected[0].node.type
+            star = menu.addAction(
+                "Remove from favourites"
+                if favourites.is_favourite(node_type) else "Add to favourites")
+            star.setToolTip("Starred nodes come first in Tab search and get "
+                            "their own shelf in the library.")
+            star.setData("favourite")
             reveal = menu.addAction("Show in node library")
             reveal.setToolTip("Open this node's home in the library - its "
                               "neighbours often do related jobs.")
@@ -911,6 +920,13 @@ class GraphView(QtWidgets.QGraphicsView):
                         if isinstance(i, NodeItem)]
             if selected:
                 self.library_reveal_requested.emit(selected[0].node.type)
+        elif chosen.data() == "favourite":
+            from .. import favourites                          # noqa: PLC0415
+            selected = [i for i in self.scene().selectedItems()
+                        if isinstance(i, NodeItem)]
+            if selected:
+                favourites.toggle(selected[0].node.type)
+                self.favourites_changed.emit()
         elif chosen.data() == "add":
             self.request_node_search(
                 self.mapToScene(self.mapFromGlobal(screen_pos)))

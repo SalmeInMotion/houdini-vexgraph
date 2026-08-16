@@ -1773,3 +1773,64 @@ def test_selecting_a_node_fills_the_library_pane_with_its_problem(editor):
 def test_the_course_starts_folded_in_a_clean_profile(editor):
     """A fresh profile must not open the course by itself."""
     assert editor._section_state["learn"]["folded"]
+
+
+# --------------------------------------------------------------- favourites
+
+@pytest.fixture(autouse=True)
+def _isolate_favourites(tmp_path, monkeypatch):
+    from vexgraph import favourites
+    monkeypatch.setattr(favourites, "STORE", tmp_path / "favourites.json")
+    yield
+
+
+def test_starring_a_node_puts_it_first_in_tab_search(editor):
+    from vexgraph import favourites
+
+    # Third in the plain ranking for "vector"; starring must lift it.
+    plain = NodeSearch(editor.registry)
+    plain.repopulate("vector")
+    before = [plain.list.item(i).data(QtCore.Qt.ItemDataRole.UserRole)
+              for i in range(min(4, plain.list.count()))]
+    assert before[0] != "split_vector" and "split_vector" in before
+    plain.deleteLater()
+
+    favourites.toggle("split_vector")
+    dialog = NodeSearch(editor.registry)
+    dialog.repopulate("vector")
+    first = dialog.list.item(0)
+    assert first.data(QtCore.Qt.ItemDataRole.UserRole) == "split_vector"
+    assert first.text().startswith("★")
+    dialog.deleteLater()
+
+
+def test_the_library_gets_a_favourites_shelf_and_a_filter(editor):
+    from vexgraph import favourites
+
+    favourites.toggle("length")
+    editor.browser.refresh_favourites()
+    tree = editor.browser.tree
+    categories = [tree.topLevelItem(i).text(0)
+                  for i in range(tree.topLevelItemCount())]
+    assert categories[0].endswith("Favourites")
+    assert len(categories) > 1                 # the rest of the library too
+
+    editor.browser.star_filter.setChecked(True)
+    categories = [tree.topLevelItem(i).text(0)
+                  for i in range(tree.topLevelItemCount())]
+    assert categories == ["★ Favourites"]
+
+
+def test_the_canvas_can_star_a_node(editor):
+    from vexgraph import favourites
+
+    item = editor.scene.add_node("random_number", QtCore.QPointF(0, 0))
+    item.setSelected(True)
+    menu = editor.view.build_node_menu()
+    action = next(a for a in menu.actions() if a.data() == "favourite")
+    assert action.text() == "Add to favourites"
+
+    favourites.toggle("random_number")
+    menu = editor.view.build_node_menu()
+    action = next(a for a in menu.actions() if a.data() == "favourite")
+    assert action.text() == "Remove from favourites"

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from .. import vextypes
+from .. import favourites, vextypes
 from ..graph import Graph
 from ..nodedefs import NodeDef, Registry
 from . import theme
@@ -103,6 +103,12 @@ class NodeSearch(QtWidgets.QDialog):
             found = sorted((d for d in self.registry if d.tier == 1),
                            key=lambda d: (d.category, d.label))
 
+        # Starred nodes first, order otherwise untouched: search relevance
+        # still decides among them, and among everything else.
+        starred = favourites.all_types()
+        if starred:
+            found = sorted(found, key=lambda d: d.type not in starred)
+
         shown = 0
         for definition in found:
             if not self._fits(definition):
@@ -121,6 +127,8 @@ class NodeSearch(QtWidgets.QDialog):
                          f"{definition.label}{suffix}")
             item.setData(QtCore.Qt.ItemDataRole.UserRole, definition.type)
             item.setToolTip(definition.help or definition.summary)
+            if definition.type in starred:
+                item.setText("★  " + item.text())
             if definition.tier == 2:
                 item.setForeground(QtGui.QBrush(QtGui.QColor("#8f8f8f")))
             self.list.addItem(item)

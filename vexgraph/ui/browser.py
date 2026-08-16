@@ -43,6 +43,12 @@ class NodeBrowser(QtWidgets.QWidget):
             f"Search all {sum(1 for _ in registry)} nodes...")
         self.search.setClearButtonEnabled(True)
         self.search.setFont(theme.ui_font(9))
+        # Star filter: the whole library, or only what you starred.
+        self.star_filter = QtWidgets.QToolButton()
+        self.star_filter.setText("★")
+        self.star_filter.setCheckable(True)
+        self.star_filter.setToolTip("Show only your favourites")
+        self.star_filter.toggled.connect(self._only_favourites)
 
         self._selected = ""
         self._doc_url = ""
@@ -64,7 +70,12 @@ class NodeBrowser(QtWidgets.QWidget):
         top_layout = QtWidgets.QVBoxLayout(top)
         top_layout.setContentsMargins(0, 0, 0, 0)
         top_layout.setSpacing(0)
-        top_layout.addWidget(self.search)
+        search_row = QtWidgets.QHBoxLayout()
+        search_row.setContentsMargins(0, 0, 0, 0)
+        search_row.setSpacing(0)
+        search_row.addWidget(self.search, 1)
+        search_row.addWidget(self.star_filter)
+        top_layout.addLayout(search_row)
         top_layout.addWidget(self.tree, 1)
 
         bottom = QtWidgets.QWidget()
@@ -124,6 +135,14 @@ class NodeBrowser(QtWidgets.QWidget):
 
         self.search.textChanged.connect(self.tree.filter)
         self.tree.populate()
+
+    def _only_favourites(self, on: bool) -> None:
+        self.tree.only_favourites = on
+        self.tree.populate(self.search.text())
+
+    def refresh_favourites(self) -> None:
+        """A node was starred elsewhere (the canvas); catch up."""
+        self.tree.populate(self.search.text())
 
     def set_focus(self, types: set[str] | None) -> None:
         """Show only these node types, or all of them when given None."""
@@ -263,6 +282,8 @@ class NodeTree(QtWidgets.QTreeWidget):
         # Learn's focus mode: the node types the course has reached, or None
         # for the whole library.
         self.focus: set[str] | None = None
+        self.only_favourites = False
+        self._query = ""
         self.setHeaderHidden(True)
         self.setIndentation(12)
         self.setFont(theme.ui_font(9))
@@ -289,6 +310,7 @@ class NodeTree(QtWidgets.QTreeWidget):
 
     def populate(self, query: str = "") -> None:
         self.clear()
+        self._query = query
         if self.focus is not None:
             # Focus mode ignores the query's reach into the whole registry:
             # the point is that there is nothing else to find yet.
@@ -316,6 +338,20 @@ class NodeTree(QtWidgets.QTreeWidget):
                 if definition.tier != BROWSE_TIER:
                     continue
                 grouped.setdefault(definition.category, []).append(definition)
+
+        # Starred nodes get the top shelf: everyone uses two dozen of the
+        # 1360, and this is where they say which two dozen.
+        from .. import favourites                               # noqa: PLC0415
+        starred = [self.registry.get(t) for t in sorted(favourites.all_types())]
+        starred = [d for d in starred if d is not None]
+        if query.strip():
+            needle = query.strip().lower()
+            starred = [d for d in starred
+                       if needle in f"{d.label} {d.type}".lower()]
+        if starred:
+            self._build_groups({"★ Favourites": starred}, expand=True)
+        if self.only_favourites:
+            return
 
         # The user's own saved functions, first: they asked for these by name.
         from .. import userfns                                  # noqa: PLC0415
@@ -401,18 +437,30 @@ class NodeTree(QtWidgets.QTreeWidget):
         return None
 
     def contextMenuEvent(self, event) -> None:
+        from .. import favourites, userfns                      # noqa: PLC0415
+
         item = self.itemAt(event.pos())
-        if (item is None
-                or item.data(0, QtCore.Qt.ItemDataRole.UserRole + 1) != "custom"):
+        if item is None:
             return
-        from .. import userfns                                  # noqa: PLC0415
-        name = item.data(0, QtCore.Qt.ItemDataRole.UserRole)[3:]
+        node_type = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
+        if not node_type:
+            return
         menu = QtWidgets.QMenu(self)
-        menu.addAction(f"Remove {name}() from library").setData("remove")
+        if item.data(0, QtCore.Qt.ItemDataRole.UserRole + 1) == "custom":
+            name = node_type[3:]
+            menu.addAction(f"Remove {name}() from library").setData("remove")
+        else:
+            menu.addAction(
+                "Remove from favourites" if favourites.is_favourite(node_type)
+                else "Add to favourites").setData("favourite")
         chosen = menu.exec(event.globalPos())
-        if chosen is not None and chosen.data() == "remove":
-            userfns.remove(name)
-            self.populate("")
+        if chosen is None:
+            return
+        if chosen.data() == "remove":
+            userfns.remove(node_type[3:])
+        elif chosen.data() == "favourite":
+            favourites.toggle(node_type)
+        self.populate(self._query)
 
     def _chosen(self, item: QtWidgets.QTreeWidgetItem, _column: int) -> None:
         node_type = item.data(0, QtCore.Qt.ItemDataRole.UserRole)

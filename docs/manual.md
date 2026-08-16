@@ -78,6 +78,40 @@ wire — no Split Vector box — and the code says `@P.y`, exactly as a
 person would type it. The Split Vector node still exists for whoever
 prefers the box.
 
+## Working with the parts of a vector
+
+Three questions come up immediately, and they have short answers.
+
+**"How do I read one part?"** Double-click a vector output: it grows
+`.x .y .z` pins (and `.w` on a vector4). That *is* the node that gives
+three outputs — it is the output itself, split. Wire the pin you want.
+
+**"How do I write one part?"** Set Component writes exactly one and
+leaves the others alone: `@P.y = 0;`.
+
+**"How do I write all three?"** Not with three Make Vectors and not by
+adding anything together. Two ways, both two nodes:
+
+- **Replace them all**: Make Vector (x, y, z) into Set Attribute. That
+  writes `@P = set(x, y, z);` — the old values are gone, which is what
+  you want when you are building a position or a colour from scratch.
+- **Change them one at a time**: three Set Component nodes on the run
+  chain, one for x, one for y, one for z. That writes three lines, each
+  modifying the attribute in place. Nothing needs summing: they run in
+  order, and each sees what the previous one left.
+
+The one thing that does *not* work is wiring a Make Vector into a Set
+Component: a component is a single number, so the socket takes a float.
+If you find yourself wanting that, you wanted Set Attribute.
+
+## Favourites
+
+Right-click any node — on the canvas or in the library — and star it.
+Starred nodes come first in Tab search (marked ★) and get their own
+shelf at the top of the library; the ★ button beside the search box
+shows only those. The library ships 1360 nodes and nobody uses more
+than a couple of dozen; this is where you say which two dozen.
+
 ## Channels
 
 `chf("scale")` is a spinner on the wrangle, not a computation, so a

@@ -85,6 +85,40 @@ un cable — sin caja Split Vector — y el código dice `@P.y`, exactamente
 como lo teclearía una persona. El nodo Split Vector sigue existiendo
 para quien prefiera la caja.
 
+## Trabajar con las partes de un vector
+
+Tres preguntas salen enseguida, y tienen respuestas cortas.
+
+**"¿Cómo leo una parte?"** Doble clic en una salida vectorial: le
+aparecen pins `.x .y .z` (y `.w` en un vector4). *Ese* es el nodo que da
+tres salidas — es la propia salida, partida. Cablea el pin que quieras.
+
+**"¿Cómo escribo una parte?"** Set Component escribe exactamente una y
+deja las otras como estaban: `@P.y = 0;`.
+
+**"¿Cómo escribo las tres?"** Ni con tres Make Vector ni sumando nada.
+Dos caminos, ambos de dos nodos:
+
+- **Reemplazarlas todas**: Make Vector (x, y, z) hacia Set Attribute.
+  Escribe `@P = set(x, y, z);` — los valores antiguos desaparecen, que
+  es lo que quieres cuando construyes una posición o un color de cero.
+- **Cambiarlas de una en una**: tres nodos Set Component en la cadena de
+  ejecución, uno para x, otro para y, otro para z. Escribe tres líneas,
+  cada una modificando el atributo en el sitio. No hay que sumar nada:
+  se ejecutan en orden y cada una ve lo que dejó la anterior.
+
+Lo único que *no* funciona es cablear un Make Vector a un Set Component:
+un componente es un solo número, así que ese socket admite un float. Si
+te ves queriendo hacerlo, lo que querías era Set Attribute.
+
+## Favoritos
+
+Clic derecho en cualquier nodo — en el canvas o en la librería — y
+márcalo con estrella. Los favoritos salen primero en la búsqueda de Tab
+(marcados con ★) y tienen su propio estante arriba de la librería; el
+botón ★ junto al buscador muestra solo esos. La librería trae 1360
+nodos y nadie usa más de un par de docenas: aquí dices cuáles.
+
 ## Canales
 
 `chf("scale")` es un spinner del wrangle, no un cálculo, así que una
