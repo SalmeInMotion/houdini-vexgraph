@@ -194,6 +194,7 @@ class VexGraphEditor(QtWidgets.QWidget):
             QMenu::item:disabled {{ color: #6a6a6a; }}
             QMenu::separator {{ height: 1px; background: #454545;
                                 margin: 4px 6px; }}
+            {theme.scrollbar_qss()}
         """)
 
         bar = QtWidgets.QHBoxLayout()

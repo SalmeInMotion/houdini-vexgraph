@@ -1544,3 +1544,38 @@ def test_repeat_asks_the_last_question_again(editor, monkeypatch):
     editor.assistant.repeat.setEnabled(True)
     editor.assistant._repeat_last()
     assert asked == ["make the points dance"]
+
+
+def test_snippet_list_has_one_grabbable_scrollbar_and_no_arrows(app, registry):
+    """Qt un-styles a whole scrollbar the moment a sheet paints its
+    background, leaving stray arrow buttons and an invisible handle. Assert
+    the rendered sub-controls, not the sheet text: no step buttons, and a
+    handle wide enough to grab."""
+    from vexgraph.ui.snippet_picker import SnippetPicker
+
+    picker = SnippetPicker(registry)
+    picker.resize(940, 620)
+    picker.show()
+    QtWidgets.QApplication.processEvents()
+
+    bar = picker.list.verticalScrollBar()
+    bar.setRange(0, 500)                      # give it something to scroll
+    QtWidgets.QApplication.processEvents()
+
+    option = QtWidgets.QStyleOptionSlider()
+    bar.initStyleOption(option)
+    style = bar.style()
+    control = QtWidgets.QStyle.ComplexControl.CC_ScrollBar
+
+    def rect(sub):
+        return style.subControlRect(control, option, sub, bar)
+
+    for sub in (QtWidgets.QStyle.SubControl.SC_ScrollBarAddLine,
+                QtWidgets.QStyle.SubControl.SC_ScrollBarSubLine):
+        area = rect(sub)
+        assert area.width() == 0 or area.height() == 0, \
+            f"step button still drawn: {area}"
+
+    handle = rect(QtWidgets.QStyle.SubControl.SC_ScrollBarSlider)
+    assert handle.height() >= 20 and handle.width() >= 8, handle
+    picker.deleteLater()

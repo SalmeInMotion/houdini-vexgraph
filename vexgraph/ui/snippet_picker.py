@@ -33,6 +33,26 @@ class SnippetPicker(QtWidgets.QDialog):
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._repopulate)
 
+        # Its own sheet rather than only the parent's: a dialog this long is
+        # all list, and the list is all scrollbar - which the panel's blanket
+        # QWidget background silently un-styles unless every sub-control is
+        # named. See theme.scrollbar_qss().
+        self.setStyleSheet(f"""
+            QDialog {{ background: {theme.PANEL_BG.name()}; }}
+            QLineEdit {{ background: {theme.TEXT_AREA_BG.name()};
+                         color: #e8e8e8; border: none; padding: 7px 10px; }}
+            QTreeWidget {{ background: {theme.PANEL_BG.name()};
+                           color: {theme.PANEL_TEXT.name()};
+                           border: none; outline: none; }}
+            QTreeWidget::item {{ padding: 3px 2px; }}
+            QTreeWidget::item:selected {{ background: #3a4a5a;
+                                          color: #ffffff; }}
+            QPlainTextEdit {{ background: {theme.CODE_BG.name()};
+                              color: {theme.CODE_TEXT.name()};
+                              border: none; }}
+            {theme.scrollbar_qss()}
+        """)
+
         self.list = QtWidgets.QTreeWidget()
         self.list.setHeaderHidden(True)
         self.list.setIndentation(12)

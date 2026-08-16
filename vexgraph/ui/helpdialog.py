@@ -22,6 +22,13 @@ class HelpDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("VEXgraph Help")
         self.resize(760, 640)
+        self.setStyleSheet(f"""
+            QDialog {{ background: {theme.PANEL_BG.name()}; }}
+            QTextBrowser {{ background: {theme.CODE_BG.name()};
+                            color: {theme.PANEL_TEXT.name()};
+                            border: none; padding: 14px; }}
+            {theme.scrollbar_qss()}
+        """)
         layout = QtWidgets.QVBoxLayout(self)
         tabs = QtWidgets.QTabWidget()
         layout.addWidget(tabs)

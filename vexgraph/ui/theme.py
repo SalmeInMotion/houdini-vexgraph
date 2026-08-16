@@ -166,3 +166,33 @@ CODE_HIGHLIGHT = _c("#2f3a4a")
 
 PANEL_BG = _c("#252525")
 PANEL_TEXT = _c("#c0c0c0")
+
+
+def scrollbar_qss() -> str:
+    """Scrollbars that show where to grab, and only once.
+
+    Qt's rule: the moment a stylesheet paints a QScrollBar's background - and
+    a blanket `QWidget { background: ... }` does exactly that - Qt stops
+    drawing the whole scrollbar natively and renders only the sub-controls
+    the sheet mentions. Mentioning none of them is what produced arrows at
+    both ends of both the groove and the bar (four of them, scattered) with
+    a handle too dark to find. So every sub-control is named here: the step
+    buttons and their arrows are given zero size, the pages are left blank,
+    and what remains is one clearly visible handle.
+    """
+    return """
+        QScrollBar:vertical { background: #1b1b1b; width: 13px; margin: 0; }
+        QScrollBar:horizontal { background: #1b1b1b; height: 13px; margin: 0; }
+        QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+            background: #555555; border-radius: 4px; margin: 2px; }
+        QScrollBar::handle:vertical { min-height: 30px; }
+        QScrollBar::handle:horizontal { min-width: 30px; }
+        QScrollBar::handle:hover { background: #6d6d6d; }
+        QScrollBar::handle:pressed { background: #7f8fa0; }
+        QScrollBar::add-line, QScrollBar::sub-line {
+            width: 0px; height: 0px; border: none; background: none; }
+        QScrollBar::up-arrow, QScrollBar::down-arrow,
+        QScrollBar::left-arrow, QScrollBar::right-arrow {
+            width: 0px; height: 0px; background: none; }
+        QScrollBar::add-page, QScrollBar::sub-page { background: none; }
+    """

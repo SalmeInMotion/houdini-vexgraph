@@ -54,6 +54,7 @@ class NodeSearch(QtWidgets.QDialog):
                            border: none; outline: none; }}
             QListWidget::item {{ padding: 6px 12px; }}
             QListWidget::item:selected {{ background: #3a4a5a; color: #ffffff; }}
+            {theme.scrollbar_qss()}
         """)
 
         self.field.textChanged.connect(self.repopulate)
