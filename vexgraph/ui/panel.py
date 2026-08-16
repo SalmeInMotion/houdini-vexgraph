@@ -40,16 +40,21 @@ UNDO_DEPTH = 100
 QWIDGETSIZE_MAX = (1 << 24) - 1
 
 
+# Sections whose folded state is never remembered: they open only when asked
+# for, every session. The course is a side room, not part of the tool's core
+# job, and a panel that opens teaching material at you is a panel that has an
+# opinion about why you came.
+ALWAYS_FOLDED_AT_START = ("learn",)
+
+
 def _default_folded(key: str) -> bool:
-    """How a section starts the very first time; a saved choice always wins.
+    """How a section starts the very first time; a saved choice usually wins.
 
     Inside Houdini the wrangle already shows the applied VEX and the screen
     is scarce, so the code pane starts folded there: a clean canvas first,
     the teacher one click away. Standalone there is no wrangle - the pane is
     the only window onto the code - so it starts open.
     """
-    if key == "learn":
-        return True          # the course is opt-in; the Learn button opens it
     return key == "code" and "hou" in sys.modules
 
 
@@ -303,9 +308,12 @@ class VexGraphEditor(QtWidgets.QWidget):
 
         # Right-aligned, out of the way of the work: learn, help, preferences.
         self.learn_button = QtWidgets.QPushButton("Learn")
+        self.learn_button.setCheckable(True)
         self.learn_button.setToolTip(
             "The Beginner course: ten exercises, checked against your "
             "graph as you build it.")
+        self.learn_button.setStyleSheet(
+            "QPushButton:checked { background: #4a6fa5; color: #ffffff; }")
         bar.addWidget(self.learn_button)
         self.help_button = QtWidgets.QPushButton("Help EN/ES")
         self.help_button.setToolTip("The manual, in English and Spanish.")
@@ -464,8 +472,9 @@ class VexGraphEditor(QtWidgets.QWidget):
         # window has not been shown yet reports invisible whatever you set, so
         # asking Qt for the current state would fold the wrong way on the first
         # click of every session.
-        state = {"folded": self._settings.value(
-            f"folded/{key}", _default_folded(key), type=bool)}
+        state = {"folded": True if key in ALWAYS_FOLDED_AT_START else
+                 self._settings.value(f"folded/{key}",
+                                      _default_folded(key), type=bool)}
 
         def apply() -> None:
             folded = state["folded"]
@@ -480,11 +489,17 @@ class VexGraphEditor(QtWidgets.QWidget):
             self._settings.setValue(f"folded/{key}", state["folded"])
             if key == "learn":
                 # Focus belongs to the open course: folding it away gives the
-                # whole library back, opening it narrows again.
+                # whole library back, opening it narrows again. (Favourites
+                # are not part of this - they are yours whatever mode you are
+                # in.) The button follows, so it looks pressed while the
+                # course is up however it was opened.
                 if state["folded"]:
                     self.learn.release_focus()
                 else:
                     self.learn._push_focus()
+                self.learn_button.blockSignals(True)
+                self.learn_button.setChecked(not state["folded"])
+                self.learn_button.blockSignals(False)
 
         label.clicked.connect(toggle)
         apply()
@@ -498,6 +513,18 @@ class VexGraphEditor(QtWidgets.QWidget):
         state = self._section_state.get(key)
         if state is not None and state["folded"]:
             self._section_toggles[key]()
+
+    def _show_learn(self, on: bool) -> None:
+        """The Learn button owns the course: pressed shows it, again hides it.
+
+        Focus is pushed on the way in rather than only when the checkbox is
+        touched - it was checked from the start and applying nothing, which
+        reads as a broken setting.
+        """
+        state = self._section_state.get("learn")
+        if state is None or state["folded"] != on:
+            return                       # already in the state being asked for
+        self._section_toggles["learn"]()
 
     def _section_label(self, text: str) -> QtWidgets.QLabel:
         label = QtWidgets.QLabel(text)
@@ -896,7 +923,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.text_larger.clicked.connect(lambda: self._nudge_text_size(+1))
         self.prefs_button.clicked.connect(self._open_preferences)
         self.help_button.clicked.connect(self._open_help)
-        self.learn_button.clicked.connect(lambda: self.unfold_section("learn"))
+        self.learn_button.toggled.connect(self._show_learn)
         self.browser.node_chosen.connect(self._place_from_browser)
         self.assistant.proposed.connect(self._propose)
         self.assistant.kept.connect(self._keep_proposal)

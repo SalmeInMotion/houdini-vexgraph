@@ -278,6 +278,11 @@ class AssistantPanel(QtWidgets.QWidget):
         self._last_request = str(self._settings.value("assistant/last", ""))
         self.repeat.setEnabled(bool(self._last_request))
         self.repeat.clicked.connect(self._repeat_last)
+        self.build_it = QtWidgets.QPushButton("Build it")
+        self.build_it.setToolTip(
+            "Take the answer you just read and propose it as nodes.")
+        self.build_it.setVisible(False)
+        self.build_it.clicked.connect(self._build_the_answer)
         self.stop = QtWidgets.QPushButton("Stop")
         self.stop.setEnabled(False)
         self.keep = QtWidgets.QPushButton("Keep This Graph")
@@ -331,6 +336,7 @@ class AssistantPanel(QtWidgets.QWidget):
         buttons = QtWidgets.QHBoxLayout()
         buttons.setContentsMargins(8, 0, 8, 6)
         buttons.addWidget(self.send)
+        buttons.addWidget(self.build_it)
         buttons.addWidget(self.repeat)
         buttons.addWidget(self.stop)
         buttons.addStretch(1)
@@ -416,6 +422,15 @@ class AssistantPanel(QtWidgets.QWidget):
         self.input.setFont(theme.ui_font(9))
         self.log.setFont(theme.ui_font(8))
 
+    def _build_the_answer(self) -> None:
+        """Ask again, as a graph, for whatever was just explained."""
+        if not self._last_request:
+            return
+        self.build_it.setVisible(False)
+        self.mode.setCurrentText("Build a graph")
+        self.input.setPlainText(self._last_request)
+        self.ask()
+
     def _repeat_last(self) -> None:
         if self._last_request:
             self.input.setPlainText(self._last_request)
@@ -478,7 +493,13 @@ class AssistantPanel(QtWidgets.QWidget):
             # asterisks in it.
             self._say(f"<b>Answer</b>{richtext.to_html(result['answer'])}",
                       "#c8d8c8")
+            # An explanation usually ends in "so you would wire X into Y" -
+            # and then the obvious next thought is "go on then". One button,
+            # rather than making someone re-type the question in the other
+            # mode.
+            self.build_it.setVisible(True)
             return
+        self.build_it.setVisible(False)
 
         try:
             graph = Graph.from_dict(result["graph"], self.registry)

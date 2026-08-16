@@ -89,7 +89,11 @@ Rules:
   commented-out alternatives.
 - Channel parameters (chf/chv/chi) are welcome where a value should be
   tweakable.
-- Return ONLY the code. No prose before or after, no markdown fence.
+- Return the code, no markdown fence, then a line reading exactly
+  `=== why ===`, then two or three sentences on WHY you built it that way:
+  the attribute you chose to drive it, the approach you picked, and the
+  obvious alternative you rejected. Someone should be able to read that and
+  ask you for a different approach.
 
 VEX syntax that is commonly got wrong:
 - Arrays are declared C-style, with the brackets after the name:
@@ -110,9 +114,32 @@ RUN_OVER_RE = re.compile(
     re.IGNORECASE)
 
 
+WHY_MARKER = "=== why ==="
+
+
+def _with_reasoning(summary: str, reasoning: str) -> str:
+    """The import report, followed by the model's own account of its choices."""
+    return f"{summary}\n\n{reasoning}" if reasoning else summary
+
+
+def split_reasoning(text: str) -> tuple[str, str]:
+    """(answer, reasoning) - the model's explanation of its own choices.
+
+    A graph that arrives with no account of itself can only be accepted or
+    rejected; one that says why it read the normal instead of the position
+    can be argued with, which is the conversation worth having.
+    """
+    lowered = text.lower()
+    at = lowered.find(WHY_MARKER)
+    if at == -1:
+        return text, ""
+    return text[:at].strip(), text[at + len(WHY_MARKER):].strip()
+
+
 def strip_vex(text: str) -> tuple[str, str]:
     """(code, run_over) from a model reply that may carry fences or prose."""
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    text, _ = split_reasoning(text)
     fenced = re.search(r"```[a-zA-Z]*\s*\n(.*?)\n?```", text, re.DOTALL)
     if fenced:
         text = fenced.group(1).strip()
@@ -430,8 +457,16 @@ class Assistant:
             emission = generate(current)
             if emission.code.strip():
                 parts.append("# The code as it stands\n")
-                parts.append("Modify this snippet. Return the whole snippet, "
-                             "not a patch.\n")
+                # Said plainly because the tool cannot do otherwise: what
+                # comes back becomes the whole canvas. A model asked to "add
+                # something without touching the rest" will happily return
+                # only the new part - and the rest is gone, which is exactly
+                # what it looks like from the other side of the screen.
+                parts.append(
+                    "Your answer REPLACES this entire snippet - there is no "
+                    "way to add to it. So keep every line that should "
+                    "survive, exactly as it is, and put your changes among "
+                    "them. Return the whole snippet, never a patch.\n")
                 parts.append(emission.code)
                 parts.append("")
         parts.append(f"# Request\n\n{request}")
@@ -444,6 +479,7 @@ class Assistant:
             attempts.append(attempt)
 
             code, run_over = strip_vex(raw)
+            _, reasoning = split_reasoning(raw)
             problems: list[str] = []
             if not code.strip():
                 problems = ["The reply contained no code."]
@@ -466,14 +502,15 @@ class Assistant:
                     graph = self._as_one_inline(code, run_over)
                     if not self._check_output(graph):
                         return Result(True, graph, generate(graph).code,
-                                      "Kept as one Inline VEX node: the code "
-                                      "works, but VEXgraph could not break it "
-                                      "into nodes.", [], attempts,
-                                      self.provider.name)
+                                      _with_reasoning(
+                                          "Kept as one Inline VEX node: the "
+                                          "code works, but VEXgraph could not "
+                                          "break it into nodes.", reasoning),
+                                      [], attempts, self.provider.name)
                 else:
                     return Result(True, graph, generate(graph).code,
-                                  report.summary(), [], attempts,
-                                  self.provider.name)
+                                  _with_reasoning(report.summary(), reasoning),
+                                  [], attempts, self.provider.name)
                 problems = ["The importer could not represent that code."]
 
             attempt.problems = problems

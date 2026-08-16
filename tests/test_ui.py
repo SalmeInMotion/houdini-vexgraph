@@ -1651,11 +1651,23 @@ def test_the_professor_gets_the_exercise_as_context(student, monkeypatch):
     assert "without giving me the finished VEX" in asked[0]
 
 
-def test_the_learn_button_unfolds_the_course(editor):
+def test_the_learn_button_owns_the_course(editor):
     state = editor._section_state["learn"]
     assert state["folded"], "the course starts folded - it is opt-in"
+    assert not editor.learn_button.isChecked()
+
     editor.learn_button.click()
-    assert not state["folded"]
+    assert not state["folded"] and editor.learn_button.isChecked()
+    assert editor._node_focus is not None, "focus applies on the way in"
+
+    editor.learn_button.click()
+    assert state["folded"] and not editor.learn_button.isChecked()
+    assert editor._node_focus is None
+
+    # Folding by the section header keeps the button honest too.
+    editor.learn_button.click()
+    editor._section_toggles["learn"]()
+    assert not editor.learn_button.isChecked()
 
 
 def test_the_exercise_lists_the_words_to_search_for(student):
@@ -1834,3 +1846,71 @@ def test_the_canvas_can_star_a_node(editor):
     menu = editor.view.build_node_menu()
     action = next(a for a in menu.actions() if a.data() == "favourite")
     assert action.text() == "Remove from favourites"
+
+
+def test_delete_works_after_selecting_from_the_code_pane(editor):
+    """Delete goes to whatever holds the keyboard. Selecting a node from a
+    code line used to leave focus in the code pane, so the node looked
+    selected and refused to die."""
+    item = editor.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
+    item.node.params["value"] = "{1, 0, 0}"
+    editor.scene.connect_ports(
+        editor.scene.node_items["start"].ports[("exec", False)],
+        item.ports[("exec", True)])
+    editor._regenerate()
+    editor.show()
+    QtWidgets.QApplication.processEvents()
+
+    editor.code.setFocus()
+    QtWidgets.QApplication.processEvents()
+    line = next(n for n, text in
+                enumerate(editor.code.toPlainText().splitlines(), 1)
+                if "@Cd" in text)
+    editor._select_from_code(line)
+    QtWidgets.QApplication.processEvents()
+
+    assert editor.view.hasFocus(), "the canvas owns the selection now"
+    before = len(editor.graph.nodes)
+    editor.scene.delete_selected()
+    assert len(editor.graph.nodes) < before
+
+
+def test_placing_from_the_library_leaves_the_keyboard_on_the_canvas(editor):
+    editor.show()
+    QtWidgets.QApplication.processEvents()
+    editor.browser.search.setFocus()
+    QtWidgets.QApplication.processEvents()
+    editor._place_from_browser("attrib_set")
+    QtWidgets.QApplication.processEvents()
+    assert editor.view.hasFocus()
+
+
+def test_the_course_never_reopens_itself_next_session(editor, tmp_path):
+    """Learn is a side room. Whatever you did last time, the panel opens on
+    the tool, not on teaching material."""
+    editor.learn_button.click()               # open it, which persists nothing
+    assert not editor._section_state["learn"]["folded"]
+
+    second = VexGraphEditor(editor.registry)
+    try:
+        assert second._section_state["learn"]["folded"]
+        assert not second.learn_button.isChecked()
+    finally:
+        second.deleteLater()
+
+
+def test_an_answer_offers_to_build_itself(editor):
+    """"Which nodes do I need?" ends in "so wire X into Y" - and the next
+    thought is "go on then"."""
+    assistant = editor.assistant
+    assert assistant.build_it.isHidden()
+    assistant._last_request = "make the points wobble"
+    assistant._done({"answer": "Use a Random Vector into an Add."})
+    assert not assistant.build_it.isHidden()
+
+    asked = []
+    assistant.ask = lambda: asked.append(
+        (assistant.mode.currentText(), assistant.input.toPlainText()))
+    assistant._build_the_answer()
+    assert asked == [("Build a graph", "make the points wobble")]
+    assert assistant.build_it.isHidden()

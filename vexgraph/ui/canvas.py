@@ -140,9 +140,7 @@ class GraphScene(QtWidgets.QGraphicsScene):
         # Whatever added this - the library list, the search popup - still holds
         # the keyboard otherwise, so the node arrives selected but Delete goes
         # somewhere else entirely and it looks undeletable.
-        views = self.views()
-        if views:
-            views[0].setFocus(QtCore.Qt.FocusReason.OtherFocusReason)
+        self.focus_canvas()
         self.graph_changed.emit()
         return item
 
@@ -561,6 +559,9 @@ class GraphScene(QtWidgets.QGraphicsScene):
 
         accepted = dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted
         GraphScene._code_editor_size = (dialog.width(), dialog.height())
+        # A closed dialog leaves the keyboard wherever Qt decides; the canvas
+        # is what the user is looking at, and Delete should reach it.
+        self.focus_canvas()
         if accepted:
             row.set_value(editor.toPlainText())
             self.value_changed(row.node_item, retyped=False)
@@ -636,9 +637,23 @@ class GraphScene(QtWidgets.QGraphicsScene):
         item = self.node_items.get(node_id)
         if item is not None:
             item.setSelected(True)
+            self.focus_canvas()
             views = self.views()
             if views:
                 views[0].centerOn(item)
+
+    def focus_canvas(self) -> None:
+        """Give the canvas the keyboard, because it now owns the selection.
+
+        Delete goes to whatever holds keyboard focus, and selecting a node
+        from somewhere else - a line in the code pane, an entry in Problems,
+        the library's Add button - used to leave focus in that text field. A
+        node was highlighted, the eye was on the canvas, and Delete quietly
+        edited a search box instead.
+        """
+        views = self.views()
+        if views:
+            views[0].setFocus(QtCore.Qt.FocusReason.OtherFocusReason)
 
     def drawBackground(self, painter: QtGui.QPainter,
                        rect: QtCore.QRectF) -> None:

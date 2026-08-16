@@ -119,3 +119,30 @@ def test_the_cli_takes_the_vex_route_like_the_local_provider():
 
     source = inspect.getsource(worker.run)
     assert '"Claude (CLI)"' in source and '"vex"' in source
+
+
+# ------------------------------------------------- explaining, and not wiping
+
+def test_a_reply_carries_its_reasoning_separately():
+    from vexgraph.assistant.agent import split_reasoning, strip_vex
+
+    raw = ("// run over: points\n@P.y += @N.y * 0.2;\n"
+           "=== why ===\nDriven from N so it follows the surface; scaling P "
+           "directly would have ignored orientation.")
+    code, run_over = strip_vex(raw)
+    assert code == "@P.y += @N.y * 0.2;"
+    assert run_over == "points"
+    assert "follows the surface" in split_reasoning(raw)[1]
+
+
+def test_the_prompt_says_the_answer_replaces_everything():
+    """A model told only "modify this" will happily return the new part
+    alone - and the rest is gone, which is what it looks like from the other
+    side of the screen."""
+    import inspect
+
+    from vexgraph.assistant.agent import Assistant
+
+    source = inspect.getsource(Assistant.build_graph_via_vex)
+    assert "REPLACES" in source
+    assert "keep every line that should" in source
