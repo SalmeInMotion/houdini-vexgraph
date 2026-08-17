@@ -691,14 +691,27 @@ class NodeItem(QtWidgets.QGraphicsItem):
         return (max(self.NOTE_MIN[0], width), max(self.NOTE_MIN[1], height))
 
     def _rebuild_note(self) -> None:
-        """A text box: exec pins, and room for its words or its code."""
+        """A text box: exec pins, and room for its words or its code.
+
+        The size is decided FIRST. An output pin is placed at the node's
+        right edge at the moment it is created, so building the pins against
+        a width the box is about to change leaves the outgoing triangle
+        stranded somewhere inside the box - which is what a resized note or
+        inline did.
+        """
+        self._width, self._height = self._note_size()
         if self.definition.exec_in:
             self._add_port(EXEC_PIN, "", "", is_input=True, is_exec=True,
                            y=theme.TITLE_HEIGHT + 6)
         self._add_port(EXEC_PIN, "", "", is_input=False, is_exec=True,
                        y=theme.TITLE_HEIGHT + 6)
-        self._width, self._height = self._note_size()
         self.update()
+
+    def _move_ports_to_edges(self) -> None:
+        """Keep the output pins on the right edge while a box is dragged."""
+        for (_name, is_input), port in self.ports.items():
+            if not is_input:
+                port.setPos(self._width, port.pos().y())
 
     def _paint_note(self, painter: QtGui.QPainter) -> None:
         rect = QtCore.QRectF(theme.PADDING_X,
@@ -763,6 +776,10 @@ class NodeItem(QtWidgets.QGraphicsItem):
             self.prepareGeometryChange()
             self._width = max(self.NOTE_MIN[0], event.pos().x())
             self._height = max(self.NOTE_MIN[1], event.pos().y())
+            self._move_ports_to_edges()
+            scene = self.scene()
+            if scene is not None and hasattr(scene, "refresh_links"):
+                scene.refresh_links()      # the wires follow the pin
             self.update()
             event.accept()
             return

@@ -2146,3 +2146,25 @@ def test_the_handle_positions_survive_reopening(editor):
                                              second.right_split.sizes())
     finally:
         second.deleteLater()
+
+
+def test_a_text_box_keeps_its_pins_on_its_edges(app, registry):
+    """The output triangle is placed at the node's right edge when it is
+    made, so a box that decides its width afterwards - or gets dragged
+    wider - left the pin stranded inside itself."""
+    graph = Graph(registry)
+    scene = GraphScene(graph)
+
+    for node_type, param in (("note", "text"), ("inline_vex", "code")):
+        item = scene.add_node(node_type, QtCore.QPointF(0, 0))
+        item.node.params[param] = "\n".join(
+            f"a fairly long line number {n} to force a wider box"
+            for n in range(10))
+        item.rebuild()
+        edge = item.boundingRect().width() - 4      # bounds pad 2 per side
+        assert abs(item.ports[("exec", False)].pos().x() - edge) < 3, node_type
+
+        item._width = 520.0
+        item._move_ports_to_edges()
+        assert abs(item.ports[("exec", False)].pos().x() - 520.0) < 3, node_type
+        assert item.ports[("exec", True)].pos().x() == 0, node_type
