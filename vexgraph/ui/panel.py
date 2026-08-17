@@ -341,9 +341,10 @@ class VexGraphEditor(QtWidgets.QWidget):
             "deliberately raised.")
 
 
+        # No height cap of its own: how much room Problems gets is the
+        # splitter handle's business now, which is to say the user's.
         self.issues = QtWidgets.QListWidget()
         self.issues.setFont(theme.ui_font(8))
-        self.issues.setMaximumHeight(120)
         self.issues.setStyleSheet(
             f"QListWidget {{ background: {theme.CODE_BG.name()};"
             f" border: none; }} QListWidget::item {{ padding: 3px 8px; }}")
@@ -359,61 +360,49 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.learn.reveal_node.connect(self._reveal_from_learn)
         self.learn.scene_requested.connect(self.scene_requested)
 
-        right = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
-        code_side = QtWidgets.QWidget()
-        code_layout = QtWidgets.QVBoxLayout(code_side)
-        code_layout.setContentsMargins(0, 0, 0, 0)
-        code_layout.setSpacing(0)
-        code_layout.addWidget(
-            self._folding_section("Learn", self.learn, "learn"))
-        code_layout.addWidget(self.learn, 1)
-        # The header carries the build button. Ctrl+Enter does the same, but
-        # a keyboard shortcut inside Houdini is a thing that sometimes
-        # arrives - a button is a thing that always does, and it is the only
-        # visible sign that typed code has to be committed at all.
-        code_header = QtWidgets.QWidget()
-        code_header_row = QtWidgets.QHBoxLayout(code_header)
-        code_header_row.setContentsMargins(0, 0, 6, 0)
-        code_header_row.setSpacing(6)
-        code_header_row.addWidget(
-            self._folding_section("Generated VEX", self.code, "code"), 1)
+        # The button lives in the Generated VEX header, so it exists before
+        # that section is built and vanishes with it: committing typed code
+        # only means something while the code is on screen.
         self.build_button = QtWidgets.QPushButton("Build nodes")
         self.build_button.setToolTip(
             "Turn what is written here into nodes (Ctrl+Enter).")
-        self.build_button.setStyleSheet(
-            "QPushButton { padding: 2px 10px; }")
-        code_header_row.addWidget(self.build_button)
-        code_layout.addWidget(code_header)
-        code_layout.addWidget(self.code, 1)
-        code_layout.addWidget(
-            self._folding_section("Problems", self.issues, "issues"))
-        code_layout.addWidget(self.issues)
-        # "About the selected node" used to sit here: a smaller copy of the
-        # library's own description pane, which already follows the canvas
-        # selection and says strictly more (sockets, types, Houdini's help
-        # with examples). One pane, in the column that was already about
-        # describing nodes.
 
-        assistant_side = QtWidgets.QWidget()
-        assistant_layout = QtWidgets.QVBoxLayout(assistant_side)
-        assistant_layout.setContentsMargins(0, 0, 0, 0)
-        assistant_layout.setSpacing(0)
-        assistant_layout.addWidget(
-            self._folding_section("Ask for a graph", self.assistant,
-                                  "assistant", container=assistant_side))
-        assistant_layout.addWidget(self.assistant, 1)
-
-        right.addWidget(code_side)
-        right.addWidget(assistant_side)
-        right.setSizes([520, 380])
+        # One splitter section per region, like the library column: every
+        # divider is the user's to drag, because how much room the course,
+        # the code, the problems and the assistant each deserve is a judgment
+        # this side of the screen has no business making.
+        self.right_split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        self.right_split.setChildrenCollapsible(False)
+        self.right_split.addWidget(
+            self._split_section("Learn", self.learn, "learn"))
+        self.right_split.addWidget(
+            self._split_section(
+                "Generated VEX", self.code, "code", extra=self.build_button,
+                on_fold=lambda folded: self.build_button.setVisible(
+                    not folded)))
+        self.right_split.addWidget(
+            self._split_section("Problems", self.issues, "issues"))
+        self.right_split.addWidget(
+            self._split_section("Ask for a graph", self.assistant,
+                                "assistant"))
+        self.right_split.setSizes([240, 300, 110, 260])
+        # Where the handles were left last time is part of the layout too.
+        saved_split = self._settings.value("split/right")
+        if saved_split:
+            self.right_split.restoreState(saved_split)
+        self.right_split.splitterMoved.connect(self._save_right_split)
+        right = self.right_split
 
         # Everything that can afford to be small must say so. A Python Panel is
         # given whatever height its pane has, and a widget whose minimum is
         # taller than that does not scroll - it is simply cut off, taking the
         # box you type in with it. Panels docked short are normal, so the
         # editor has to survive one.
-        for shrinkable in (self.browser, self.code, self.issues, self.learn,
-                           self.assistant, code_side, assistant_side, right):
+        shrinkables = [self.browser, self.code, self.issues, self.learn,
+                       self.assistant, right]
+        shrinkables += [self.right_split.widget(i)
+                        for i in range(self.right_split.count())]
+        for shrinkable in shrinkables:
             shrinkable.setMinimumHeight(0)
             shrinkable.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
                                      QtWidgets.QSizePolicy.Policy.Ignored)
@@ -461,9 +450,43 @@ class VexGraphEditor(QtWidgets.QWidget):
         layout.addWidget(splitter, 1)
         layout.addLayout(footer)
 
+    def _save_right_split(self, *_args) -> None:
+        self._settings.setValue("split/right", self.right_split.saveState())
+
+    def _split_section(self, title: str, body: QtWidgets.QWidget, key: str,
+                       extra: QtWidgets.QWidget | None = None,
+                       on_fold=None) -> QtWidgets.QWidget:
+        """One draggable splitter region: a fold-away header, then the body.
+
+        `extra` rides on the right of the header (the Build nodes button) in
+        a row that never absorbs leftover height - the previous layout let it
+        stretch, and the button floated alone in the middle of the emptiness
+        left by two folded sections.
+        """
+        box = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(box)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        header = self._folding_section(title, body, key, container=box,
+                                       on_fold=on_fold)
+        if extra is None:
+            lay.addWidget(header)
+        else:
+            row_holder = QtWidgets.QWidget()
+            row = QtWidgets.QHBoxLayout(row_holder)
+            row.setContentsMargins(0, 0, 6, 0)
+            row.setSpacing(6)
+            row.addWidget(header, 1)
+            row.addWidget(extra)
+            row_holder.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
+                                     QtWidgets.QSizePolicy.Policy.Fixed)
+            lay.addWidget(row_holder)
+        lay.addWidget(body, 1)
+        return box
+
     def _folding_section(self, text: str, body: QtWidgets.QWidget, key: str,
-                         container: QtWidgets.QWidget | None = None
-                         ) -> QtWidgets.QLabel:
+                         container: QtWidgets.QWidget | None = None,
+                         on_fold=None) -> QtWidgets.QLabel:
         """A heading you can click to fold the panel under it away.
 
         A docked panel is short, and the library, the code, the problems, the
@@ -498,6 +521,8 @@ class VexGraphEditor(QtWidgets.QWidget):
             label.setText(("▸  " if folded else "▾  ") + text)
             outer.setMaximumHeight(label.sizeHint().height() if folded
                                    else QWIDGETSIZE_MAX)
+            if on_fold is not None:
+                on_fold(folded)
 
         def toggle() -> None:
             state["folded"] = not state["folded"]

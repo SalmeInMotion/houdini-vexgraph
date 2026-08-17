@@ -2086,3 +2086,58 @@ def test_opening_a_document_still_frames_it(editor):
     editor.build_from_code()
     QtWidgets.QApplication.processEvents()
     assert editor.view.transform().m11() != pytest.approx(4.0)
+
+
+# ------------------------------------------------------- the right column
+
+def test_the_right_column_is_four_draggable_sections(editor):
+    """Ivan's ask: the regions on the right behave like the library column -
+    every divider is the user's to drag."""
+    assert editor.right_split.count() == 4
+    assert not editor.right_split.childrenCollapsible()
+
+
+def test_the_build_button_belongs_to_the_code_section(editor):
+    """It floated alone in the middle of two folded sections' emptiness, and
+    showed even when the code it builds from was folded away."""
+    editor.show()
+    QtWidgets.QApplication.processEvents()
+    assert not editor._section_state["code"]["folded"], "standalone: open"
+    assert editor.build_button.isVisible()
+    assert editor.build_button.height() < 40, "a button, not a panel"
+
+    editor._section_toggles["code"]()
+    assert not editor.build_button.isVisible(), "folded code, no button"
+    editor._section_toggles["code"]()
+    assert editor.build_button.isVisible()
+
+
+def test_a_folded_section_gives_its_room_back(editor):
+    editor.show()
+    QtWidgets.QApplication.processEvents()
+    box = editor.right_split.widget(2)          # Problems
+    editor._section_state["issues"]["folded"] or \
+        editor._section_toggles["issues"]()
+    assert box.maximumHeight() < 40
+
+
+def test_the_handle_positions_survive_reopening(editor):
+    editor.show()
+    QtWidgets.QApplication.processEvents()
+    editor.right_split.setSizes([80, 500, 60, 200])
+    editor._save_right_split()
+
+    second = VexGraphEditor(editor.registry)
+    try:
+        second.resize(1200, 800)
+        second.show()
+        QtWidgets.QApplication.processEvents()
+        # Not exact: restoring happens before the window takes its final
+        # size, and the proportional redistribution rounds. What matters is
+        # that the dragged layout came back rather than the defaults.
+        for mine, theirs in zip(editor.right_split.sizes(),
+                                second.right_split.sizes()):
+            assert abs(mine - theirs) < 40, (editor.right_split.sizes(),
+                                             second.right_split.sizes())
+    finally:
+        second.deleteLater()
