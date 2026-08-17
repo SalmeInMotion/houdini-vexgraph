@@ -25,3 +25,6 @@ houdini/VEXpressions.txt
 
 # Saved snippet stores are per-machine, not source.
 Snippets/
+
+# audit_corpus.py writes its detail here
+audit_out.json
