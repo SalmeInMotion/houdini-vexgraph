@@ -546,15 +546,31 @@ class GraphScene(QtWidgets.QGraphicsScene):
         QtCore.QTimer.singleShot(0, take_focus)
 
     def edit_note(self, item) -> None:
-        """A plain multi-line window for a note's text."""
+        """The multi-line window behind a text box's double-click.
+
+        One door for both boxes, dressed for its content: prose gets a plain
+        window, Inline VEX gets the code font, the highlighter and the
+        remembered editor size.
+        """
         views = self.views()
         dialog = QtWidgets.QDialog(views[0] if views else None)
-        dialog.setWindowTitle("Note")
-        dialog.resize(460, 260)
         dialog.setSizeGripEnabled(True)
-
         editor = QtWidgets.QPlainTextEdit(item.note_text())
-        editor.setFont(theme.ui_font(10))
+        if item.is_note:
+            dialog.setWindowTitle("Note")
+            dialog.resize(460, 260)
+            editor.setFont(theme.ui_font(10))
+        else:
+            from .codeview import VexHighlighter  # noqa: PLC0415 - cycle
+            dialog.setWindowTitle(f"Edit {item.definition.label}")
+            dialog.resize(*GraphScene._code_editor_size)
+            editor.setFont(theme.mono_font(10))
+            editor.setLineWrapMode(
+                QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
+            editor.setTabStopDistance(
+                4 * editor.fontMetrics().horizontalAdvance(" "))
+            VexHighlighter(editor.document())
+
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.StandardButton.Ok
             | QtWidgets.QDialogButtonBox.StandardButton.Cancel)
@@ -565,10 +581,13 @@ class GraphScene(QtWidgets.QGraphicsScene):
         layout.addWidget(buttons)
 
         accepted = dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted
+        if not item.is_note:
+            GraphScene._code_editor_size = (dialog.width(), dialog.height())
         self.focus_canvas()
         if accepted:
-            item.node.params["text"] = editor.toPlainText()
-            item.update()
+            item.node.params[item.text_param] = editor.toPlainText()
+            item.rebuild()          # the box may want a different size now
+            self.rebuild_links()    # rebuild() replaced its port items
             self.graph_changed.emit()
 
     def edit_row_code(self, row: RowItem) -> None:
@@ -1035,9 +1054,9 @@ class GraphView(QtWidgets.QGraphicsView):
         if not isinstance(item, RowItem):
             node = _owning_node(item)
             if node is not None:
-                if node.is_note:
-                    # A note has no help page worth opening; what it wants is
-                    # somewhere to write.
+                if node.is_text_box:
+                    # A text box has no help page worth opening; what it
+                    # wants is somewhere to write.
                     self.scene().edit_note(node)
                 elif node.node.type.startswith("fn_"):
                     self.function_opened.emit(node.node.type[3:])

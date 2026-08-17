@@ -555,9 +555,15 @@ class NodeItem(QtWidgets.QGraphicsItem):
         # once here rather than on every repaint: it reads a zip.
         self.has_help = vexhelp.page(self.definition.vex_function) is not None
         self.status_text = ""
-        # A note is a place to write, so it is a box rather than a row: the
-        # text wraps inside it and the corner drags to whatever size the
-        # writing needs. The size lives on the node, so it survives saving.
+        # A node whose body IS text - the Note, and Inline VEX - is a box
+        # rather than a row: the content shows in full and the corner drags
+        # to whatever size it needs. The size lives on the node, so it
+        # survives saving. Notes wrap prose; the inline shows its code line
+        # by line in the code font, because a snippet you cannot read at a
+        # glance is a snippet you have to open to distrust.
+        self.text_param = next(
+            (p.name for p in self.definition.params if p.kind == "text"), "")
+        self.is_text_box = bool(self.text_param)
         self.is_note = self.definition.type == "note"
         self._resizing = False
         # Hovering answers "what does this one do?" without a click: the
@@ -653,18 +659,39 @@ class NodeItem(QtWidgets.QGraphicsItem):
     NOTE_HANDLE = 14.0
 
     def note_text(self) -> str:
-        return self.node.params.get("text", "")
+        return self.node.params.get(self.text_param, "")
+
+    def _fitting_size(self) -> tuple[float, float]:
+        """A first size that shows the content, for a box never sized by hand.
+
+        Matters most for Inline VEX: the importer drops real snippets into
+        it, and a 260-pixel default would hide exactly the thing this box
+        exists to show. Capped, because a 200-line snippet still deserves a
+        canvas, not a wall.
+        """
+        text = self.note_text()
+        if not text.strip() or self.is_note:
+            return (260.0, 130.0)
+        metrics = QtGui.QFontMetricsF(theme.mono_font(8))
+        lines = text.splitlines() or [""]
+        widest = max(metrics.horizontalAdvance(line) for line in lines)
+        width = min(640.0, max(260.0, widest + theme.PADDING_X * 2 + 14))
+        height = min(460.0, max(110.0, len(lines) * metrics.height()
+                                + theme.TITLE_HEIGHT + theme.PORT_ROW_HEIGHT
+                                + 16))
+        return (width, height)
 
     def _note_size(self) -> tuple[float, float]:
+        fit_w, fit_h = self._fitting_size()
         try:
-            width = float(self.node.params.get("width", 260))
-            height = float(self.node.params.get("height", 130))
+            width = float(self.node.params.get("width", fit_w))
+            height = float(self.node.params.get("height", fit_h))
         except (TypeError, ValueError):
-            width, height = 260.0, 130.0
+            width, height = fit_w, fit_h
         return (max(self.NOTE_MIN[0], width), max(self.NOTE_MIN[1], height))
 
     def _rebuild_note(self) -> None:
-        """A note is a box you write in: one exec pin, and room for words."""
+        """A text box: exec pins, and room for its words or its code."""
         if self.definition.exec_in:
             self._add_port(EXEC_PIN, "", "", is_input=True, is_exec=True,
                            y=theme.TITLE_HEIGHT + 6)
@@ -679,12 +706,30 @@ class NodeItem(QtWidgets.QGraphicsItem):
                              self._width - theme.PADDING_X * 2,
                              self._height - theme.TITLE_HEIGHT
                              - theme.PORT_ROW_HEIGHT - 8)
-        painter.setFont(theme.ui_font(8))
         painter.setPen(theme.ROW_VALUE_TEXT)
-        text = self.note_text() or "Double-click to write"
-        painter.drawText(rect, int(QtCore.Qt.AlignmentFlag.AlignLeft
-                                   | QtCore.Qt.AlignmentFlag.AlignTop
-                                   | QtCore.Qt.TextFlag.TextWordWrap), text)
+        if self.is_note:
+            painter.setFont(theme.ui_font(8))
+            text = self.note_text() or "Double-click to write"
+            painter.drawText(rect, int(QtCore.Qt.AlignmentFlag.AlignLeft
+                                       | QtCore.Qt.AlignmentFlag.AlignTop
+                                       | QtCore.Qt.TextFlag.TextWordWrap),
+                             text)
+        else:
+            # Code: line by line in the code font, clipped rather than
+            # wrapped - a wrapped snippet stops looking like the code it is.
+            font = theme.mono_font(8)
+            painter.setFont(font)
+            metrics = QtGui.QFontMetricsF(font)
+            text = self.note_text() or "// double-click to edit"
+            y = rect.top() + metrics.ascent()
+            for line in text.splitlines() or [""]:
+                if y > rect.bottom():
+                    break
+                painter.drawText(
+                    QtCore.QPointF(rect.left(), y),
+                    metrics.elidedText(line, QtCore.Qt.TextElideMode.ElideRight,
+                                       rect.width()))
+                y += metrics.height()
         # The corner you drag, drawn as three quiet lines.
         corner = QtCore.QPointF(self._width, self._height)
         painter.setPen(QtGui.QPen(theme.NODE_OUTLINE, 1))
@@ -693,7 +738,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
                              corner + QtCore.QPointF(-3, -offset))
 
     def _on_note_handle(self, pos: QtCore.QPointF) -> bool:
-        return (self.is_note
+        return (self.is_text_box
                 and pos.x() > self._width - self.NOTE_HANDLE
                 and pos.y() > self._height - self.NOTE_HANDLE)
 
@@ -705,7 +750,8 @@ class NodeItem(QtWidgets.QGraphicsItem):
         super().hoverMoveEvent(event)
 
     def mousePressEvent(self, event) -> None:
-        if (self.is_note and event.button() == QtCore.Qt.MouseButton.LeftButton
+        if (self.is_text_box
+                and event.button() == QtCore.Qt.MouseButton.LeftButton
                 and self._on_note_handle(event.pos())):
             self._resizing = True
             event.accept()
@@ -747,7 +793,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
         retire(detached)        # freeing these now would crash the next repaint
 
         self.prepareGeometryChange()
-        if self.is_note:
+        if self.is_text_box:
             self._rebuild_note()
             return
         self._width = self._measure_width()
@@ -921,7 +967,7 @@ class NodeItem(QtWidgets.QGraphicsItem):
                                     theme.NODE_RADIUS, theme.NODE_RADIUS)
 
         self._paint_title(painter)
-        if self.is_note:
+        if self.is_text_box:
             self._paint_note(painter)
         else:
             self._paint_port_labels(painter)

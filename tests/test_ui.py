@@ -1110,22 +1110,27 @@ def test_arrow_keys_on_the_canvas_are_left_alone(editor):
     assert not editor.eventFilter(editor.view, event)
 
 
-def test_inline_vex_gets_a_multi_line_editor(app, registry):
-    """The escape hatch holds exactly the code that was too involved to model,
-    so it is never one short line - a one-line pill was the wrong shape."""
-    from vexgraph.ui.items import CodeRow
+def test_inline_vex_is_a_code_box_you_can_read(app, registry):
+    """Ivan's ask: the inline shows its code at a glance, like the note.
 
-    assert registry.require("inline_vex").param("code").kind == "text"
+    It was a one-line row summarising "first line (+N more)" - the one node
+    whose whole content is worth seeing hid it behind a click."""
     graph = Graph(registry)
     scene = GraphScene(graph)
     item = scene.add_node("inline_vex", QtCore.QPointF(0, 0))
-    row = next(r for r in item.rows if r.key == "param:code")
-    assert isinstance(row, CodeRow)
+    assert item.is_text_box and not item.is_note
+    assert not item.rows, "a box, not a pill"
 
-    row.set_value("int i = 0;\nfor (i = 0; i < 3; i++) {\n    @P += 1;\n}")
-    assert "4 lines" in row.summary(), row.summary()
-    row.set_value("")
-    assert "click to write" in row.summary()
+    lines = "\n".join(f"@P.y += {n} * 0.01;" for n in range(14))
+    item.node.params["code"] = lines
+    item.rebuild()
+    assert item.boundingRect().height() > 200, "sized to show the snippet"
+    assert item.boundingRect().width() > 250
+
+    # Hand-dragged sizes win over the automatic fit, and persist.
+    item.node.params.update(width="500", height="150")
+    item.rebuild()
+    assert abs(item.boundingRect().width() - 504) < 6
 
 
 def test_double_clicking_a_wire_removes_it(editor):
