@@ -911,7 +911,7 @@ class VexGraphEditor(QtWidgets.QWidget):
         self._restoring = True
         try:
             self.graph = Graph.from_dict(state, self.registry)
-            self._show_scene()
+            self._show_scene(frame=False)
             self.run_over.setCurrentText(self.graph.run_over)
             self.assistant.set_graph(self.graph)
             self._regenerate()
@@ -1262,11 +1262,17 @@ class VexGraphEditor(QtWidgets.QWidget):
         if accepted and name.strip():
             self.collapse_selection(name.strip())
 
-    def _show_scene(self) -> None:
+    def _show_scene(self, frame: bool = True) -> None:
         """Point the canvas at the open function, or at the main graph.
 
         One scene, rebound - the same mechanism undo uses - so every signal
         connection and shortcut keeps working wherever the user is standing.
+
+        `frame` because those two cases want opposite things. Arriving at a
+        document you have not seen (opened, built from code, stepped into a
+        function) wants framing. Undo does not: the whole question undo
+        answers is "what just changed", and reframing the view moves
+        everything on screen, which is precisely the answer being looked for.
         """
         inner = self.graph.functions.get(self._open_function)
         if inner is None:
@@ -1274,7 +1280,8 @@ class VexGraphEditor(QtWidgets.QWidget):
         shown = inner if inner is not None else self.graph
         self.scene.graph = shown
         self.scene.reload()
-        self.view.frame_all()
+        if frame:
+            self.view.frame_all()
         self.crumb_bar.setVisible(inner is not None)
         if inner is not None and inner.signature is not None:
             signature = inner.signature

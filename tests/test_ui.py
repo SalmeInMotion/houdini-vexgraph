@@ -2049,3 +2049,40 @@ def test_the_open_editor_follows_a_node_that_moves(editor):
     assert after != before
     expected = row.mapToScene(row.boundingRect().topLeft())
     assert (after - expected).manhattanLength() < 1.0
+
+
+def test_undo_leaves_the_view_exactly_where_it_was(editor):
+    """Undo answers "what just changed" - and reframing moves everything on
+    screen, which is the one thing that makes that question unanswerable."""
+    editor.show()
+    QtWidgets.QApplication.processEvents()
+    editor.code.setPlainText("@P.y = 1;\n@Cd = {1, 0, 0};")
+    editor.build_from_code()
+    QtWidgets.QApplication.processEvents()
+
+    # Park the view somewhere deliberate: zoomed in, off to one side.
+    editor.view.scale(1.7, 1.7)
+    editor.view.centerOn(QtCore.QPointF(400, 250))
+    QtWidgets.QApplication.processEvents()
+    zoom = editor.view.transform().m11()
+    centre = editor.view.mapToScene(editor.view.viewport().rect().center())
+
+    editor.scene.add_node("attrib_set", QtCore.QPointF(0, 0))
+    editor._record_history()
+    editor.undo()
+    QtWidgets.QApplication.processEvents()
+
+    assert editor.view.transform().m11() == pytest.approx(zoom), "zoom moved"
+    now = editor.view.mapToScene(editor.view.viewport().rect().center())
+    assert (now - centre).manhattanLength() < 2.0, "the view drifted"
+
+
+def test_opening_a_document_still_frames_it(editor):
+    """The other half of the same rule: arriving somewhere new should show it."""
+    editor.show()
+    QtWidgets.QApplication.processEvents()
+    editor.view.scale(4.0, 4.0)
+    editor.code.setPlainText("@P.y = 1;")
+    editor.build_from_code()
+    QtWidgets.QApplication.processEvents()
+    assert editor.view.transform().m11() != pytest.approx(4.0)
