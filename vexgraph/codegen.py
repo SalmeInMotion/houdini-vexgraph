@@ -783,6 +783,24 @@ class Emitter:
         return [Line(f"{vextypes.attribute_reference(name, vex_type)} = {value};",
                      node.id)]
 
+    def _builtin_attrib_rename(self, node: Node,
+                               definition: NodeDef) -> list[Line]:
+        """Copy the value under the new name, then delete the old attribute.
+
+        A wrangle has no rename, so this is what renaming actually is - and
+        the binding has to be built from the type (`s@path`, not
+        `string@path`), which is why it is a builtin rather than a template.
+        """
+        vex_type = self.graph.param_value(node, "type")
+        old = self.graph.param_value(node, "from")
+        new = self.graph.param_value(node, "to")
+        klass = self.graph.param_value(node, "class")
+        return [
+            Line(f"{vextypes.attribute_reference(new, vex_type)} = "
+                 f"{vextypes.attribute_reference(old, vex_type)};", node.id),
+            Line(f'removeattrib(0, "{klass}", "{old}");', node.id),
+        ]
+
     def _builtin_attrib_set_component(self, node: Node,
                                       definition: NodeDef) -> list[Line]:
         """`@P.y = value;` - one line, exactly as a wrangle writer types it."""

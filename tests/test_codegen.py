@@ -385,3 +385,36 @@ def _exercise(registry, definition) -> Graph:
         if socket.default is None:
             g.connect(f"read_{socket.name}", "value", "subject", socket.name)
     return g
+
+
+def test_renaming_an_attribute_is_one_node(registry):
+    """A wrangle has no rename: it is a write under the new name plus a
+    removeattrib. Verified against hand-written VEX on real geometry."""
+    from vexgraph.vccmap import check_source
+
+    graph = Graph(registry)
+    graph.add("start", "start")
+    graph.run_over = "primitives"
+    graph.add("attrib_rename", "r1", type="string",
+              **{"class": "prim", "from": "chipsrc", "to": "path"})
+    graph.chain("start", "r1")
+
+    code = generate(graph).code
+    assert "s@path = s@chipsrc;" in code, code
+    assert 'removeattrib(0, "prim", "chipsrc");' in code
+    check = check_source(code)
+    if check.checked:
+        assert check.ok, check.raw
+
+
+def test_removing_an_attribute_declares_nothing(registry):
+    """The generated node emitted `int removeattrib_value = ...` - a variable
+    nobody reads, in code meant to be read."""
+    graph = Graph(registry)
+    graph.add("start", "start")
+    graph.add("attrib_remove", "d1", **{"class": "prim", "name": "chipsrc"})
+    graph.chain("start", "d1")
+
+    code = generate(graph).code
+    assert 'removeattrib(0, "prim", "chipsrc");' in code
+    assert "=" not in code.split("\n")[1], code

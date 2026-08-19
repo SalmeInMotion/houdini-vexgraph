@@ -113,6 +113,30 @@ def tokenize(source: str) -> list[Token]:
 
         start = index
 
+        # Raw strings - r"piece\d+" - do not process escape
+        # sequences, which is why every regex in the wild is written that
+        # way. The `r` lexed as a name of its own, the parse failed, and
+        # the statement went to Inline VEX, taking with it every later
+        # statement that used what it declared. The token keeps the `r`
+        # prefix: see below.
+        if (char in "rR" and index + 1 < length
+                and source[index + 1] in "\"'"):
+            quote = source[index + 1]
+            index += 2
+            while index < length and source[index] != quote:
+                index += 1        # no escapes in here: that is the point
+            if index >= length:
+                raise LexError("unterminated raw string", start, line)
+            index += 1
+            # Kept verbatim, NOT normalised into an escaped string:
+            # measured in Houdini, "piece\\d+" is 7 characters
+            # (pieced+) while r"piece\d+" is 8 (piece\d+).
+            # VEX drops the backslash either way, so the raw form is the
+            # only spelling that survives, and it has to travel intact.
+            tokens.append(Token(Kind.STRING, source[start:index],
+                                start, index, line))
+            continue
+
         # VEX takes either quote, and hand-written snippets use `ch('parm')`
         # constantly. Only accepting double quotes was the single biggest
         # reason real code fell through to Inline VEX.

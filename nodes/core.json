@@ -806,6 +806,101 @@
     "custom",
     "hand-written"
    ]
+  },
+  {
+   "type": "attrib_remove",
+   "category": "Attributes",
+   "label": "Remove Attribute",
+   "kind": "statement",
+   "summary": "Deletes an attribute from the geometry.",
+   "help": "Removes the attribute for every element, not just the one being worked on - it deletes the attribute itself. Class must be the one the attribute lives on.",
+   "params": [
+    {
+     "name": "class",
+     "label": "Class",
+     "kind": "menu",
+     "default": "point",
+     "menu": [
+      "point",
+      "prim",
+      "vertex",
+      "detail"
+     ]
+    },
+    {
+     "name": "name",
+     "label": "Attribute",
+     "kind": "string",
+     "default": "myattr"
+    }
+   ],
+   "code": "removeattrib(0, \"{class}\", \"{name}\");",
+   "tags": [
+    "delete",
+    "remove",
+    "attribute",
+    "cleanup",
+    "removeattrib"
+   ]
+  },
+  {
+   "type": "attrib_rename",
+   "category": "Attributes",
+   "label": "Rename Attribute",
+   "kind": "statement",
+   "summary": "Copies an attribute to a new name and deletes the old one.",
+   "help": "A wrangle has no rename: renaming is writing the value under the new name and removing the old attribute. This does both. The wrangle must be running over the class you pick, because the copy reads and writes the element currently being processed.",
+   "params": [
+    {
+     "name": "type",
+     "label": "Type",
+     "kind": "vextype",
+     "default": "float",
+     "menu": [
+      "float",
+      "int",
+      "vector",
+      "vector2",
+      "vector4",
+      "string",
+      "matrix3",
+      "matrix",
+      "dict"
+     ]
+    },
+    {
+     "name": "class",
+     "label": "Class",
+     "kind": "menu",
+     "default": "point",
+     "menu": [
+      "point",
+      "prim",
+      "vertex",
+      "detail"
+     ]
+    },
+    {
+     "name": "from",
+     "label": "From",
+     "kind": "string",
+     "default": "oldname"
+    },
+    {
+     "name": "to",
+     "label": "To",
+     "kind": "string",
+     "default": "newname"
+    }
+   ],
+   "tags": [
+    "rename",
+    "attribute",
+    "move",
+    "copy",
+    "removeattrib"
+   ],
+   "builtin": "attrib_rename"
   }
  ]
 }

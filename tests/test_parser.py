@@ -679,3 +679,36 @@ def test_functions_survive_saving(registry):
         "int twice(int a){ return a * 2; }\ni@out = twice(3);", registry)
     clone = Graph.from_dict(report.graph.to_dict(), registry)
     assert generate(clone).code == generate(report.graph).code
+
+
+# ------------------------------------------------------------- raw strings
+
+def test_a_raw_string_becomes_nodes_and_survives_intact(registry):
+    """Ivan's snippet: every regex in the wild is written r"...", and the `r`
+    lexed as a name of its own - the statement went to Inline VEX and took
+    the next one with it, because that one used what it declared."""
+    from vexgraph import generate
+
+    source = (r'string new_name = re_replace(r"piece\d+", "static", s@chipsrc);'
+              "\ns@path = new_name;\n")
+    report = import_vex(source, registry)
+    assert not any(n.type == "inline_vex" for n in report.graph.nodes.values())
+
+    out = generate(report.graph).code
+    # Verbatim, NOT re-spelled with escapes: measured in Houdini,
+    # "piece\d+" is 7 characters (pieced+) where r"piece\d+" is 8. The
+    # escaped spelling silently stops matching anything.
+    assert r'r"piece\d+"' in out, out
+    assert generate(import_vex(out, registry).graph).code == out
+
+
+def test_raw_strings_take_either_quote(registry):
+    for text in (r'r"a\d"', r"r'a\d'"):
+        graph = import_vex(f"s@x = {text};", registry).graph
+        assert not any(n.type == "inline_vex" for n in graph.nodes.values())
+
+
+def test_an_unterminated_raw_string_is_reported_not_swallowed(registry):
+    """It must not run off the end of the file silently."""
+    graph = import_vex('s@x = r"never closed;\n', registry).graph
+    assert any(n.type == "inline_vex" for n in graph.nodes.values())
