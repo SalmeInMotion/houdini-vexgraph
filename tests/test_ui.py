@@ -2098,7 +2098,9 @@ def test_opening_a_document_still_frames_it(editor):
 def test_the_right_column_is_four_draggable_sections(editor):
     """Ivan's ask: the regions on the right behave like the library column -
     every divider is the user's to drag."""
-    assert editor.right_split.count() == 4
+    # Four sections plus the filler that keeps the splitter unbounded.
+    assert editor.right_split.count() == 5
+    assert editor.right_split.widget(4) is editor.split_filler
     assert not editor.right_split.childrenCollapsible()
 
 
@@ -2168,3 +2170,34 @@ def test_a_text_box_keeps_its_pins_on_its_edges(app, registry):
         item._move_ports_to_edges()
         assert abs(item.ports[("exec", False)].pos().x() - 520.0) < 3, node_type
         assert item.ports[("exec", True)].pos().x() == 0, node_type
+
+
+def test_folding_every_section_does_not_squash_the_editor(editor):
+    """Ivan opened it after three weeks away and found the whole interface
+    crammed into the top 250 pixels of the window.
+
+    A folded section caps itself to its header - that is what makes it hand
+    its room back - and a QSplitter whose children are ALL capped reports
+    that cap as its own maximum, which the layout above then honours.
+    Measured: a 104px maximum applied to the entire editor, canvas included.
+    """
+    editor.resize(1400, 900)
+    editor.show()
+    QtWidgets.QApplication.processEvents()
+    tall = editor.view.height()
+    assert tall > 400, "the fixture itself should not be squashed"
+
+    for key in ("learn", "code", "issues", "assistant"):
+        if not editor._section_state[key]["folded"]:
+            editor._section_toggles[key]()
+    QtWidgets.QApplication.processEvents()
+
+    assert editor.right_split.maximumHeight() > 10000, "a cap escaped upward"
+    assert editor.view.height() == tall, "the canvas keeps its height"
+    # The filler takes the leftover room only when nothing else can use it.
+    assert editor.right_split.sizes()[-1] > 100
+
+    editor._section_toggles["code"]()
+    QtWidgets.QApplication.processEvents()
+    assert editor.right_split.sizes()[-1] == 0, "it yields as soon as it can"
+    assert editor.view.height() == tall

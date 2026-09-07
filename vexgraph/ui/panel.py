@@ -385,7 +385,20 @@ class VexGraphEditor(QtWidgets.QWidget):
         self.right_split.addWidget(
             self._split_section("Ask for a graph", self.assistant,
                                 "assistant"))
-        self.right_split.setSizes([240, 300, 110, 260])
+        # A last section that never has a maximum of its own. Every other one
+        # gets capped to its header when folded - that is what makes a folded
+        # section hand its room back - and a QSplitter whose children are ALL
+        # capped reports that cap as its own, which the layout above then
+        # honours. Measured with every section folded: the splitter claimed a
+        # maximum of 104px and the whole editor, canvas included, was squashed
+        # into it. This filler keeps one child unbounded, so that can never
+        # happen again.
+        self.split_filler = QtWidgets.QWidget()
+        self.split_filler.setMinimumHeight(0)
+        self.split_filler.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
+                                        QtWidgets.QSizePolicy.Policy.Expanding)
+        self.right_split.addWidget(self.split_filler)
+        self.right_split.setSizes([240, 300, 110, 260, 0])
         # Where the handles were left last time is part of the layout too.
         saved_split = self._settings.value("split/right")
         if saved_split:
@@ -401,7 +414,9 @@ class VexGraphEditor(QtWidgets.QWidget):
         shrinkables = [self.browser, self.code, self.issues, self.learn,
                        self.assistant, right]
         shrinkables += [self.right_split.widget(i)
-                        for i in range(self.right_split.count())]
+                        for i in range(self.right_split.count())
+                        if self.right_split.widget(i)
+                        is not self.split_filler]
         for shrinkable in shrinkables:
             shrinkable.setMinimumHeight(0)
             shrinkable.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,

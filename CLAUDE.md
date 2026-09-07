@@ -50,6 +50,19 @@ depend on scene context we do not have, and are not our problem.
 - **HOM identity.** Compare `node.path()`, never `is`: Houdini hands back fresh
   wrapper objects for the same node.
 
+## Qt traps
+
+- **A QSplitter hands its children's maximum upward.** Every right-hand
+  section caps itself to its header when folded, which is what makes it give
+  its room back - but when *all* of them were capped, the splitter reported
+  that total as its own maximum and the layout above honoured it: the whole
+  editor, canvas included, was squashed into 104px. The fix is the last child
+  of `right_split`, `split_filler`: a plain widget with no maximum, which
+  takes the leftover room only when nothing else can. Never make every child
+  of a splitter bounded.
+- A widget only reports its real geometry once shown; a test that checks
+  heights must `show()` and `processEvents()` first.
+
 ## The course (`vexgraph/learn.py`)
 
 - No model, no connection: each exercise is checked deterministically, and
